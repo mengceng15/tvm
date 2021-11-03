@@ -721,19 +721,11 @@ bool BatchNormRel(const Array<Type>& types, int num_inputs, const Attrs& attrs,
 
   const BatchNormAttrs* param = attrs.as<BatchNormAttrs>();
 
-  // std::cout<<"nn_batchnorm ";
-  // for (auto in : data->shape)
-  // {
-  //   std::cout<<in<<" ";
-  // }
-  //  std::cout<<std::endl;
   // axis of -1 means use the last dimension
   ICHECK(param->axis >= -1 && param->axis < (int)data->shape.size());
   int axis = (param->axis != -1) ? param->axis : data->shape.size() - 1;
-  
   auto axis_size = data->shape[axis];
-  if(data->shape.size()>4)
-  {axis_size = data->shape[data->shape.size()-1] * axis_size;}
+
   // if we are using beta and gamma, they need to be of shape (dim,)
   reporter->Assign(types[1], TensorType({axis_size}, data->dtype));
   reporter->Assign(types[2], TensorType({axis_size}, data->dtype));

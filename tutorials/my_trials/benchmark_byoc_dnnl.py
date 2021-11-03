@@ -429,8 +429,8 @@ if __name__ == "__main__":
     )
     parser.add_argument("--dtype", type=str, default="float32", help="The data type.")
     
-    parser.add_argument("--warmup", type=int, default=2)
-    parser.add_argument("--batches", type=int, default=10)
+    parser.add_argument("--warmup", type=int, default=20)
+    parser.add_argument("--batches", type=int, default=100)
     parser.add_argument("--profiling", type=bool, default=False)
     parser.add_argument("--check_acc", type=bool, default=True)
     args = parser.parse_args()

@@ -34,11 +34,6 @@
 #include "../../arith/const_fold.h"
 #include "../../target/datatype/registry.h"
 
-#include "dnnl.hpp"
-
-using dim_t = dnnl_dim_t;
-using dims_t = dnnl_dims_t;
-
 namespace tvm {
 
 using namespace tir;

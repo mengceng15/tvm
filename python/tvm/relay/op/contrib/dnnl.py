@@ -60,18 +60,12 @@ def _register_external_op_helper(op_name, supported=True):
 
 
 # _register_external_op_helper("nn.batch_norm")
-
 _register_external_op_helper("nn.conv2d")
 _register_external_op_helper("nn.dense")
 _register_external_op_helper("nn.relu")
-
-#_register_external_op_helper("add")
-#_register_external_op_helper("subtract")
-#_register_external_op_helper("multiply")
-
-# _register_external_op_helper("layout_transform")
-
-# _register_external_op_helper("layout_transform")
+# _register_external_op_helper("add")
+# _register_external_op_helper("subtract")
+# _register_external_op_helper("multiply")
 
 _register_external_op_helper("concatenate")
 _register_external_op_helper("nn.max_pool2d")
@@ -114,11 +108,8 @@ def make_conv_add_sum_relu_pattern():
     out = is_op("nn.relu")(out)
     return out
     
-
-
 @register_pattern_table("dnnl")
 def pattern_table():
-    
     conv2d_bias_sum_relu_pat = ("dnnl.conv2d_bias_sum_relu", make_conv_add_sum_relu_pattern())
     conv2d_bias_relu_pat = ("dnnl.conv2d_bias_relu", make_pattern(with_bias=True))
     conv2d_bias_pat = ("dnnl.conv2d_bias", make_pattern(with_bias=True, with_relu=False))
@@ -126,9 +117,4 @@ def pattern_table():
     dense_bias_pat = ("dnnl.dense_bias", make_dense_pattern(with_bias=True))
     dnnl_patterns = [conv2d_bias_sum_relu_pat, conv2d_bias_relu_pat, conv2d_bias_pat, dense_bias_relu_pat, dense_bias_pat]#conv2d_relu_pat, 
     return dnnl_patterns
-    
-    # conv2d_bias_relu_pat = ("dnnl.conv2d_bias_relu", make_pattern(with_bias=True))
-    # conv2d_relu_pat = ("dnnl.conv2d_relu", make_pattern(with_bias=False))
-    # dnnl_patterns = [conv2d_bias_relu_pat, conv2d_relu_pat]
-    # return dnnl_patterns
     

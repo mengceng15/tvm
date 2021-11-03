@@ -151,7 +151,6 @@ class DebugResult(object):
                 eid += 1
 
         with open(os.path.join(self._dump_path, "output_tensors.params"), "wb") as param_f:
-            # print(output_tensors)
             param_f.write(save_tensors(output_tensors))
 
     def dump_chrome_trace(self):

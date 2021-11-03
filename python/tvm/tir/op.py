@@ -849,6 +849,7 @@ def abs(x, span=None):
     """
     return _ffi_api.abs(x, span)  # type: ignore
 
+
 def round(x, span=None):
     """Round elements of the array to the nearest integer.
 

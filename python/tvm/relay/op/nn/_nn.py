@@ -296,7 +296,7 @@ def convert_conv2d(attrs, inputs, tinfos, desired_layouts):
         # Check for depthwise convolution.
         data_info, weight_info = tinfos
         if is_depthwise_conv2d(
-            data_info.shape,  
+            data_info.shape,
             attrs["data_layout"],
             weight_info.shape,
             attrs["kernel_layout"],
