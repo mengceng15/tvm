@@ -306,6 +306,47 @@ extern "C" void dnnl_binary_op(float* data, float* weight, float* out, int algo_
   read_from_dnnl_memory(out, dst_memory);
 }
 
+// debug
+// extern "C" void dnnl_matmul(float* data, float* weight, float* bias, float* out, int M, int K, int N) {
+//   engine eng(engine::kind::cpu, 0);
+//   stream s(eng);
+//   using tag = memory::format_tag;
+//   using dt = memory::data_type;
+
+//   const memory::dim batch = N;
+
+//   memory::dims data_tz = {M, K};
+//   memory::dims weight_tz = {K, N};
+//   memory::dims bias_tz = {1, 1};
+//   memory::dims dst_tz = {M, N};
+
+//   auto data_md = memory::desc({data_tz}, dt::f32, tag::any);
+//   auto weight_md = memory::desc({weight_tz}, dt::f32, tag::any);
+//   auto bias_md = memory::desc({bias_tz}, dt::f32, tag::any);
+//   auto dst_md = memory::desc({dst_tz}, dt::f32, tag::any);
+
+//   auto data_memory = memory(data_md, eng, data);
+//   auto weight_memory = memory(weight_md, eng, weight);
+//   auto bias_memory = memory(bias_md, eng, bias);
+//   auto dst_memory = memory(dst_md, eng);
+
+//   auto matmul_desc = matmul::desc(data_md, weight_md, bias_md, dst_md);
+//   auto matmul_prim_desc = matmul::primitive_desc(matmul_desc, eng);
+//   assert(dst_md == matmul_prim_desc.dst_desc());
+
+//   auto matmul = matmul(matmul_prim_desc);
+
+//   std::unordered_map<int, memory> matmul_args;
+//   matmul_args.insert({DNNL_ARG_SRC, data_memory});
+//   matmul_args.insert({DNNL_ARG_WEIGHTS, weight_memory});
+//   matmul_args.insert({DNNL_ARG_BIAS, bias_memory});
+//   matmul_args.insert({DNNL_ARG_DST, dst_memory});
+
+//   matmul.execute(s, matmul_args);
+//   s.wait();
+//   read_from_dnnl_memory(out, dst_memory);
+// }
+
 }  // namespace contrib
 }  // namespace runtime
 }  // namespace tvm

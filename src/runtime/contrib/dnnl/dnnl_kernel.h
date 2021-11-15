@@ -66,6 +66,10 @@ extern "C" TVM_DLL void dnnl_bn(float* data, float* gamma, float* beta, float* m
 extern "C" TVM_DLL void dnnl_binary_op(float* data, float* weight, float* out, int binary_algo,
                                        std::vector<int64_t> shape);
 
+// debug
+// extern "C" TVM_DLL void dnnl_matmul(float* data, float* weight, float* out, int M,
+//                                     int K, int N);
+
 }  // namespace contrib
 }  // namespace runtime
 }  // namespace tvm

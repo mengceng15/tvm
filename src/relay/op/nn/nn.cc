@@ -259,10 +259,15 @@ bool DensePackRel(const Array<Type>& types, int num_inputs, const Attrs& attrs,
   ICHECK(param != nullptr);
 
   ICHECK_EQ(data->shape.size(), 2) << "Only 2D data is supported";
-  ICHECK_EQ(weight->shape.size(), 3) << "Weight is not packed";
+  // ICHECK_EQ(weight->shape.size(), 3) << "Weight is not packed";
 
   Array<tvm::PrimExpr> oshape = data->shape;
-  oshape.Set(1, weight->shape[0] * weight->shape[2]);
+  if (weight->shape.size() == 3) {
+    oshape.Set(1, weight->shape[0] * weight->shape[2]);
+  } else {
+    ICHECK_EQ(weight->shape.size(), 4) << "Weight is not packed 3D or 4D";
+    oshape.Set(1, weight->shape[0] * weight->shape[3]);
+  }
 
   DataType out_dtype = param->out_dtype;
   if (out_dtype.bits() == 0) {
@@ -298,6 +303,80 @@ RELAY_REGISTER_OP("nn.contrib_dense_pack")
     .set_attr<FInferCorrectLayout>("FInferCorrectLayout", DensePackInferCorrectLayout)
     .add_type_rel("DensePack", DensePackRel);
 // ------------------- relay.nn.contrib_dense_pack
+
+// ------------------- relay.nn.special_matmul
+TVM_REGISTER_NODE_TYPE(SpecialMatmulAttrs);
+
+// Positional relay function to create special_matmul operator used by frontend FFI.
+Expr MakeSpecialMatmul(Expr data, Expr weight, tvm::String weight_layout,
+ bool is_batch_matmul, IndexExpr units, DataType out_dtype) {
+  auto attrs = make_object<SpecialMatmulAttrs>();
+  attrs->units = units;
+  attrs->out_dtype = out_dtype;
+  attrs->weight_layout = std::move(weight_layout);
+  attrs->is_batch_matmul = is_batch_matmul;
+  static const Op& op = Op::Get("nn.special_matmul");
+  return Call(op, {data, weight}, Attrs(attrs), {});
+}
+
+TVM_REGISTER_GLOBAL("relay.op.nn._make.special_matmul").set_body_typed(MakeSpecialMatmul);
+
+bool SpecialMatmulRel(const Array<Type>& types, int num_inputs, const Attrs& attrs,
+                  const TypeReporter& reporter) {
+  ICHECK_EQ(types.size(), 3);
+  const auto* data = types[0].as<TensorTypeNode>();
+  const auto* weight = types[1].as<TensorTypeNode>();
+  if (data == nullptr || weight == nullptr) return false;
+
+  const SpecialMatmulAttrs* param = attrs.as<SpecialMatmulAttrs>();
+  ICHECK(param != nullptr);
+
+  Array<tvm::PrimExpr> oshape = data->shape;
+  if(param->is_batch_matmul) { // Batch matmul
+    ICHECK_EQ(data->shape.size(), 4) << "Only 4D data is supported for batch matmul";
+    auto oc = weight->shape[3];
+    oshape.Set(3, oc);
+  } else { // Normal 3d x 2D
+    ICHECK_EQ(data->shape.size(), 3) << "Only 3D data is supported";
+    auto oc = weight->shape.size() == 2 ? weight->shape[0] :
+    weight->shape[0] * weight->shape[3];
+    oshape.Set(2, oc);
+  }
+
+  DataType out_dtype = param->out_dtype;
+  if (out_dtype.bits() == 0) {
+    out_dtype = data->dtype;
+  }
+  // assign output type
+  reporter->Assign(types[2], TensorType(oshape, out_dtype));
+  return true;
+}
+
+InferCorrectLayoutOutput SpecialMatmulInferCorrectLayout(const Attrs& attrs,
+                                                     const Array<Layout>& new_in_layouts,
+                                                     const Array<Layout>& old_in_layouts,
+                                                     const Array<tvm::relay::Type>& old_in_types) {
+  auto params = attrs.as<SpecialMatmulAttrs>();
+  ICHECK(params);
+  if(params->is_batch_matmul) {
+    return InferCorrectLayoutOutput({"NCHW", params->weight_layout}, {"NCHW"}, attrs);
+  } else {
+    return InferCorrectLayoutOutput({"NCW", params->weight_layout}, {"NCW"}, attrs);
+  }
+}
+
+RELAY_REGISTER_OP("nn.special_matmul")
+    .describe(R"code(
+        BYOC special matmul
+)code" TVM_ADD_FILELINE)
+    .set_attrs_type<SpecialMatmulAttrs>()
+    .set_num_inputs(2)
+    .add_argument("data", "3D Tensor", "Input data.")
+    .add_argument("weight", "4D Tensor", "Packed weight matrix.")
+    .set_support_level(10)
+    .set_attr<FInferCorrectLayout>("FInferCorrectLayout", SpecialMatmulInferCorrectLayout)
+    .add_type_rel("SpecialMatmul", SpecialMatmulRel);
+// ------------------- relay.nn.special_matmul
 
 // relay.leaky_relu
 TVM_REGISTER_NODE_TYPE(LeakyReluAttrs);

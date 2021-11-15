@@ -1667,6 +1667,12 @@ def contrib_dense_pack(data, weight, weight_layout="NC", units=None, out_dtype="
     return _make.contrib_dense_pack(data, weight, weight_layout, units, out_dtype)
 
 
+def special_matmul(data, weight, weight_layout="NC", is_batch_matmul=False, 
+ units=None, out_dtype=""):
+    return _make.special_matmul(data, weight, weight_layout, is_batch_matmul, 
+     units, out_dtype)
+
+
 def fifo_buffer(data, buffer, axis):
     """FIFO buffer to enable computation reuse in CNNs with sliding indow input
 

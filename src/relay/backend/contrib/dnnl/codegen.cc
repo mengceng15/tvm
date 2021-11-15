@@ -150,6 +150,20 @@ std::vector<std::string> Multiply(const CallNode* call) {
   return args;
 }
 
+// debug
+// std::vector<std::string> Matmul(const CallNode* call) {
+//   std::vector<std::string> args;
+//   auto ishape = GetShape(call->args[0]->checked_type());
+//   auto wshape = GetShape(call->args[1]->checked_type());
+
+//   // Args: M, K, N
+//   args.push_back(std::to_string(ishape[0]));
+//   args.push_back(std::to_string(ishape[1]));
+//   args.push_back(std::to_string(wshape[1]));
+
+//   return args;
+// }
+
 // TODO(@zhiics, @comaniac): This is a basic implementation. We should implement
 // all utilities and make a base class for users to implement.
 class CodegenDNNL : public MemoizedExprTranslator<std::vector<Output>>, public CodegenCBase {
@@ -251,6 +265,8 @@ class CodegenDNNL : public MemoizedExprTranslator<std::vector<Output>>, public C
         {"nn.conv2d", {"dnnl_conv2d", Conv2d}}, {"nn.dense", {"dnnl_dense", Dense}},
         {"nn.relu", {"dnnl_relu", Relu}},       {"nn.batch_norm", {"dnnl_bn", BatchNorm}},
         {"add", {"dnnl_binary_op", Add}},       {"multiply", {"dnnl_binary_op", Multiply}},
+        // debug
+        // {"nn.matmul", {"dnnl_matmul", Matmul}},
     };
 
     const auto op_name = GetRef<Op>(op_node)->name;
@@ -435,6 +451,24 @@ class DNNLModuleCodegen : public CSourceModuleCodegenBase {
 
 #else  // DNNL JSON runtime
 
+inline const CallNode* FindCallWithName(const CallNode* current_call, int max_depth,
+                                        const std::string& root_name) {
+  ICHECK(current_call && max_depth >= 0);
+
+  if (max_depth == 0) {
+    ICHECK(current_call && IsOp(current_call, root_name));
+    return current_call;
+  }
+  if (IsOp(current_call, root_name)) {
+    return current_call;
+  }
+
+  ICHECK_GT(current_call->args.size(), 0);
+
+  const auto* next_call = current_call->args[0].as<CallNode>();
+  return FindCallWithName(next_call, max_depth - 1, root_name);
+}
+
 class DNNLJSONSerializer : public backend::contrib::JSONSerializer {
   using JSONGraphNode = tvm::runtime::json::JSONGraphNode;
   using JSONGraphNodeEntry = tvm::runtime::json::JSONGraphNodeEntry;
@@ -464,11 +498,23 @@ class DNNLJSONSerializer : public backend::contrib::JSONSerializer {
       } else if (name == "dnnl.conv2d_bias") {
         call = GetRootCall(fn->body.as<CallNode>(), 1, {"nn.conv2d", "add"});
         ICHECK(call->op.as<OpNode>()) << "Not op node";
-      } else if (name == "dnnl.dense_bias_relu") {
-        call = GetRootCall(fn->body.as<CallNode>(), 2, {"nn.dense", "add", "nn.relu"});
+      } else if (name == "dnnl.special_matmul_bias_relu") {
+        call = GetRootCall(fn->body.as<CallNode>(), 2, {"nn.special_matmul", "add", "nn.relu"});
         ICHECK(call->op.as<OpNode>()) << "Not op node";
-      } else if (name == "dnnl.dense_bias") {
-        call = GetRootCall(fn->body.as<CallNode>(), 1, {"nn.dense", "add"});
+      } else if (name == "dnnl.special_matmul_bias") {
+        call = GetRootCall(fn->body.as<CallNode>(), 1, {"nn.special_matmul", "add"});
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name == "dnnl.special_matmul_bias_gelu") {
+        call = FindCallWithName(fn->body.as<CallNode>(), 7, "nn.special_matmul");
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name == "dnnl.special_matmul_bias_mul") {
+        call = GetRootCall(fn->body.as<CallNode>(), 2, {"nn.special_matmul", "add", "multiply"});
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name == "dnnl.special_matmul_div_add") {
+        call = GetRootCall(fn->body.as<CallNode>(), 2, {"nn.special_matmul", "divide", "add"});
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name == "dnnl.special_matmul_bias_mul_add") {
+        call = GetRootCall(fn->body.as<CallNode>(), 3, {"nn.special_matmul", "add", "multiply", "add"});
         ICHECK(call->op.as<OpNode>()) << "Not op node";
       } else {
         LOG(FATAL) << "Unrecognized DNNL pattern: " << name;
