@@ -50,24 +50,30 @@ def update_lib(lib):
     return lib
 
 def example():
-    x = relay.var("x", relay.TensorType((20, 30), "float32"))
-    y = relay.var("y", relay.TensorType((30, 40), "float32"))
-    z = relay.var("z", relay.TensorType((40, 10), "float32"))
+    x = relay.var("x", relay.TensorType((4, 6), "float32"))
+    y = relay.var("y", relay.TensorType((6, 3), "float32"))
+    z = relay.var("z", relay.TensorType((3, 2), "float32"))
+    b = relay.var("b", relay.TensorType((4, 2), "float32"))
     matmul0 = nn.matmul(x, y)
     matmul1 = nn.matmul(matmul0, z)
-    # res = nn.relu(matmul1)
-    return relay.Function([x, y, z], matmul1)
+    bias = relay.add(matmul1, b)
+    res = nn.relu(bias)
+    return relay.Function([x, y, z, b], res)
 
 def benchmark(batch_size=1, batches=10, warmup=2):
     ctx = tvm.cpu()
 
     f = example()
     mod = tvm.IRModule.from_expr(f)
-    # print(mod['main'].astext(show_meta_data=False))
+    print(mod['main'].astext(show_meta_data=False))
 
+    mod = relay.transform.MergeComposite(pattern_table())(mod)
+    print(mod['main'].astext(show_meta_data=False))
     mod = relay.transform.AnnotateTarget(["dnnl"])(mod) # Output: Figure 2
     mod = relay.transform.MergeCompilerRegions()(mod) # Output: Figure 3
     mod = relay.transform.PartitionGraph()(mod) # Output: Figure 4
+    # print(mod['main'].astext(show_meta_data=False))
+
     # seq = tvm.transform.Sequential(
     #     [
     #         relay.transform.RemoveUnusedFunctions(),
@@ -94,16 +100,18 @@ def benchmark(batch_size=1, batches=10, warmup=2):
     json, lib, params = relay.build(mod, "llvm")
     rt_mod = tvm.contrib.graph_executor.create(json, lib, ctx)#Create a runtime executor module given a graph and module.
 
-    datax = np.random.uniform(size=(20, 30))
-    datay = np.random.uniform(size=(30, 40))
-    dataz = np.random.uniform(size=(40, 10))
+    datax = np.random.uniform(size=(4, 6)) - 0.5
+    datay = np.random.uniform(size=(6, 3)) - 0.5
+    dataz = np.random.uniform(size=(3, 2)) - 0.5
+    datab = np.random.uniform(size=(4, 2)) - 0.5
 
     rt_mod.set_input("x", tvm.nd.array(datax.astype("float32")))
     rt_mod.set_input("y", tvm.nd.array(datay.astype("float32")))
     rt_mod.set_input("z", tvm.nd.array(dataz.astype("float32")))
+    rt_mod.set_input("b", tvm.nd.array(datab.astype("float32")))
     rt_mod.run()
     tvm_output = rt_mod.get_output(0)
     print(tvm_output)
-    print(np.matmul(np.matmul(datax, datay), dataz))
+    print(np.maximum(np.matmul(np.matmul(datax, datay), dataz) + datab, 0))
 
 benchmark(batch_size=1)

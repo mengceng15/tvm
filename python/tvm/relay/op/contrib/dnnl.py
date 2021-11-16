@@ -108,6 +108,19 @@ def make_conv_add_sum_relu_pattern():
     out = is_op("add")(out, data2)
     out = is_op("nn.relu")(out)
     return out
+
+def make_matmul_pattern(with_bias=False, with_relu=False):
+    data = wildcard()
+    weight = wildcard()
+    bias = wildcard()
+    matmul = is_op("nn.matmul")(data, weight)
+    if with_bias:
+        matmul_out = is_op("add")(matmul, bias)
+    else:
+        matmul_out = matmul
+    if with_relu:
+        matmul_out = is_op("nn.relu")(matmul_out)
+    return matmul_out
     
 @register_pattern_table("dnnl")
 def pattern_table():
@@ -116,6 +129,9 @@ def pattern_table():
     conv2d_bias_pat = ("dnnl.conv2d_bias", make_pattern(with_bias=True, with_relu=False))
     dense_bias_relu_pat = ("dnnl.dense_bias_relu", make_dense_pattern(with_bias=True, with_relu=True))
     dense_bias_pat = ("dnnl.dense_bias", make_dense_pattern(with_bias=True))
-    dnnl_patterns = [conv2d_bias_sum_relu_pat, conv2d_bias_relu_pat, conv2d_bias_pat, dense_bias_relu_pat, dense_bias_pat]#conv2d_relu_pat, 
+    matmul_bias_relu_pat = ("dnnl.matmul_bias_relu", make_matmul_pattern(with_bias=True, with_relu=True))
+    matmul_bias_pat = ("dnnl.matmul_bias", make_matmul_pattern(with_bias=True, with_relu=False))
+    dnnl_patterns = [conv2d_bias_sum_relu_pat, conv2d_bias_relu_pat, conv2d_bias_pat, dense_bias_relu_pat,
+     dense_bias_pat, matmul_bias_relu_pat, matmul_bias_pat] #conv2d_relu_pat, 
     return dnnl_patterns
     

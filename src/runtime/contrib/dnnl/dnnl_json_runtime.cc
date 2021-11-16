@@ -144,6 +144,10 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
           Pooling(nid, dnnl::algorithm::pooling_avg);
         } else if ("nn.matmul" == op_name) {
           Matmul(nid);
+        } else if ("dnnl.matmul_bias_relu" == op_name) {
+          Matmul(nid, true, true);
+        } else if ("dnnl.matmul_bias" == op_name) {
+          Matmul(nid, true, true);  
         } else {
           LOG(FATAL) << "Unsupported op: " << op_name;
         }
@@ -598,7 +602,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     });
   }
 
-  void Matmul(const size_t& nid) {
+  void Matmul(const size_t& nid, const bool has_bias = false, const bool has_relu=false) {
     auto node = nodes_[nid];
 
     // Setup attributes.
@@ -629,8 +633,18 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     auto bias_md = dnnl::memory::desc({bias_dims, dt::f32, tag::ab});
     auto dst_md = dnnl::memory::desc({out_dims, dt::f32, tag::ab});
 
-    auto matmul_desc = dnnl::matmul::desc(data_md, weight_md, bias_md, dst_md);
-    auto matmul_prim_desc = dnnl::matmul::primitive_desc(matmul_desc, engine_);
+    auto matmul_desc = has_bias?
+        dnnl::matmul::desc(data_md, weight_md, bias_md, dst_md):
+        dnnl::matmul::desc(data_md, weight_md, dst_md);
+    
+    dnnl::post_ops ops;
+    if (has_relu) {
+      ops.append_eltwise(1.f, dnnl::algorithm::eltwise_relu, 0.f, 1.f);
+    }
+    dnnl::primitive_attr attr;
+    attr.set_post_ops(ops);
+    
+    auto matmul_prim_desc = dnnl::matmul::primitive_desc(matmul_desc, attr, engine_);
     auto matmul = dnnl::matmul(matmul_prim_desc);
     net_.push_back(matmul);
 
@@ -638,23 +652,32 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     auto data_memory = BindDNNLMemory(data_entry, data_md);
     auto weight_memory = BindDNNLMemory(weight_entry, weight_md);
     auto bias_memory = dnnl::memory(bias_md, engine_);
-   
+    if (has_bias) {
+      auto bias_entry = node.GetInputs()[2];
+      BindDNNLMemory(bias_entry, bias_memory);
+    } 
     JSONGraphNodeEntry out_entry(nid, 0);
     auto dst_memory = BindDNNLMemory(out_entry, matmul_prim_desc.dst_desc());
 
-    std::vector<float> bias_data(M * N, 0.0f);
-    float* dst = static_cast<float*>(bias_memory.get_data_handle());
-    std::copy(&bias_data[0], &bias_data[0] + M * N, dst);
+    // std::vector<float> bias_data(M * N, 0.0f);
+    // float* dst = static_cast<float*>(bias_memory.get_data_handle());
+    // std::copy(&bias_data[0], &bias_data[0] + M * N, dst);
 
     // debug
     // for (auto i = 0; i < M * N; i ++) {
     //     std::cout << "bias_memory[" << i << "] " << *((float *)bias_memory.get_data_handle() + i) << std::endl;
     // }
 
-    net_args_.push_back({{DNNL_ARG_SRC, data_memory},
-                         {DNNL_ARG_WEIGHTS, weight_memory},
-                         {DNNL_ARG_BIAS, bias_memory},
-                         {DNNL_ARG_DST, dst_memory}});
+    if (has_bias) {
+        net_args_.push_back({{DNNL_ARG_SRC, data_memory},
+                            {DNNL_ARG_WEIGHTS, weight_memory},
+                            {DNNL_ARG_BIAS, bias_memory},
+                            {DNNL_ARG_DST, dst_memory}});
+    } else {
+        net_args_.push_back({{DNNL_ARG_SRC, data_memory},
+                            {DNNL_ARG_WEIGHTS, weight_memory},
+                            {DNNL_ARG_DST, dst_memory}});
+    }
   }
 
   // Read from DNNL memory (+offset) and write to the handle.
