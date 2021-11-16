@@ -145,9 +145,11 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
         } else if ("nn.matmul" == op_name) {
           Matmul(nid);
         } else if ("dnnl.matmul_bias_relu" == op_name) {
-          Matmul(nid, true, true);
+          Matmul(nid, true, "relu");
         } else if ("dnnl.matmul_bias" == op_name) {
-          Matmul(nid, true, true);  
+          Matmul(nid, true);  
+        } else if ("dnnl.matmul_bias_gelu" == op_name) {
+          Matmul(nid, true, "gelu");
         } else {
           LOG(FATAL) << "Unsupported op: " << op_name;
         }
@@ -602,7 +604,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     });
   }
 
-  void Matmul(const size_t& nid, const bool has_bias = false, const bool has_relu=false) {
+  void Matmul(const size_t& nid, const bool has_bias = false, const std::string act_type="none") {
     auto node = nodes_[nid];
 
     // Setup attributes.
@@ -638,8 +640,11 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
         dnnl::matmul::desc(data_md, weight_md, dst_md);
     
     dnnl::post_ops ops;
-    if (has_relu) {
+    if (act_type == "relu") {
       ops.append_eltwise(1.f, dnnl::algorithm::eltwise_relu, 0.f, 1.f);
+    }
+    if (act_type == "gelu") {
+      ops.append_eltwise(1.f, dnnl::algorithm::eltwise_gelu, 0.f, 1.f);
     }
     dnnl::primitive_attr attr;
     attr.set_post_ops(ops);

@@ -33,9 +33,10 @@ it is supported. For example:
 check the attributes of the op and decide if it should be offloaded to DNNL.
 """
 import tvm.ir
-from ...dataflow_pattern import wildcard, is_op
+from ...dataflow_pattern import wildcard, is_op, is_expr
 from .register import register_pattern_table
-
+from tvm.relay.expr import const
+import math
 
 def _register_external_op_helper(op_name, supported=True):
     """The helper function to indicate that a given operator can be supported
@@ -109,7 +110,7 @@ def make_conv_add_sum_relu_pattern():
     out = is_op("nn.relu")(out)
     return out
 
-def make_matmul_pattern(with_bias=False, with_relu=False):
+def make_matmul_pattern(with_bias=False, activation_type = "none"):
     data = wildcard()
     weight = wildcard()
     bias = wildcard()
@@ -118,8 +119,19 @@ def make_matmul_pattern(with_bias=False, with_relu=False):
         matmul_out = is_op("add")(matmul, bias)
     else:
         matmul_out = matmul
-    if with_relu:
+    if (activation_type == "relu") :
         matmul_out = is_op("nn.relu")(matmul_out)
+    if (activation_type == "gelu") :
+        const1 = is_expr(const(0.044715))
+        const2 = is_expr(const(math.sqrt(2 / math.pi)))
+        gelu = is_op("power")(matmul_out, is_expr(const(3, dtype="float32")))
+        gelu = is_op("multiply")(gelu, const1)
+        gelu = is_op("add")(gelu, matmul_out)
+        gelu = is_op("multiply")(gelu, const2)
+        gelu = is_op("tanh")(gelu)
+        gelu = is_op("add")(gelu, is_expr(const(1, dtype="float32")))
+        gelu = is_op("multiply")(gelu, is_expr(const(0.5)))
+        matmul_out = is_op("multiply")(gelu, matmul_out)
     return matmul_out
     
 @register_pattern_table("dnnl")
@@ -129,9 +141,10 @@ def pattern_table():
     conv2d_bias_pat = ("dnnl.conv2d_bias", make_pattern(with_bias=True, with_relu=False))
     dense_bias_relu_pat = ("dnnl.dense_bias_relu", make_dense_pattern(with_bias=True, with_relu=True))
     dense_bias_pat = ("dnnl.dense_bias", make_dense_pattern(with_bias=True))
-    matmul_bias_relu_pat = ("dnnl.matmul_bias_relu", make_matmul_pattern(with_bias=True, with_relu=True))
-    matmul_bias_pat = ("dnnl.matmul_bias", make_matmul_pattern(with_bias=True, with_relu=False))
+    matmul_bias_relu_pat = ("dnnl.matmul_bias_relu", make_matmul_pattern(with_bias=True, activation_type="relu"))
+    matmul_bias_gelu_pat = ("dnnl.matmul_bias_gelu", make_matmul_pattern(with_bias=True, activation_type="gelu"))
+    matmul_bias_pat = ("dnnl.matmul_bias", make_matmul_pattern(with_bias=True))
     dnnl_patterns = [conv2d_bias_sum_relu_pat, conv2d_bias_relu_pat, conv2d_bias_pat, dense_bias_relu_pat,
-     dense_bias_pat, matmul_bias_relu_pat, matmul_bias_pat] #conv2d_relu_pat, 
+     dense_bias_pat, matmul_bias_relu_pat, matmul_bias_gelu_pat, matmul_bias_pat] #conv2d_relu_pat, 
     return dnnl_patterns
     

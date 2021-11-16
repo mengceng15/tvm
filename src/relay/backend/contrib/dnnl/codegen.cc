@@ -451,6 +451,24 @@ class DNNLModuleCodegen : public CSourceModuleCodegenBase {
 
 #else  // DNNL JSON runtime
 
+inline const CallNode* FindCallWithName(const CallNode* current_call, int max_depth,
+                                        const std::string& root_name) {
+  ICHECK(current_call && max_depth >= 0);
+
+  if (max_depth == 0) {
+    ICHECK(current_call && IsOp(current_call, root_name));
+    return current_call;
+  }
+  if (IsOp(current_call, root_name)) {
+    return current_call;
+  }
+
+  ICHECK_GT(current_call->args.size(), 0);
+
+  const auto* next_call = current_call->args[0].as<CallNode>();
+  return FindCallWithName(next_call, max_depth - 1, root_name);
+}
+
 class DNNLJSONSerializer : public backend::contrib::JSONSerializer {
   using JSONGraphNode = tvm::runtime::json::JSONGraphNode;
   using JSONGraphNodeEntry = tvm::runtime::json::JSONGraphNodeEntry;
@@ -485,6 +503,9 @@ class DNNLJSONSerializer : public backend::contrib::JSONSerializer {
         ICHECK(call->op.as<OpNode>()) << "Not op node";
       } else if (name == "dnnl.dense_bias") {
         call = GetRootCall(fn->body.as<CallNode>(), 1, {"nn.dense", "add"});
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name == "dnnl.matmul_bias_gelu") {
+        call = FindCallWithName(fn->body.as<CallNode>(), 10, "nn.matmul");
         ICHECK(call->op.as<OpNode>()) << "Not op node";
       } else if (name == "dnnl.matmul_bias_relu") {
         call = GetRootCall(fn->body.as<CallNode>(), 2, {"nn.matmul", "add", "nn.relu"});

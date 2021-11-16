@@ -6,6 +6,8 @@ import time
 import mxnet as mx
 import warnings
 
+import math
+
 # from torch._C import T
 warnings.filterwarnings("ignore")
 # from mxnet.gluon.model_zoo.vision import *
@@ -57,7 +59,20 @@ def example():
     matmul0 = nn.matmul(x, y)
     matmul1 = nn.matmul(matmul0, z)
     bias = relay.add(matmul1, b)
-    res = nn.relu(bias)
+    # relu
+    # res = nn.relu(bias)
+    # gelu
+    const1 = relay.const(0.044715)
+    const2 = relay.const(math.sqrt(2 / math.pi))
+    gelu = relay.power(bias, relay.const(3, dtype="float32"))
+    gelu = relay.multiply(gelu, const1)
+    gelu = relay.add(gelu, bias)
+    gelu = relay.multiply(gelu, const2)
+    gelu = relay.tanh(gelu)
+    gelu = relay.add(gelu, relay.const(1, dtype="float32"))
+    gelu = relay.multiply(gelu, relay.const(0.5))
+    res = relay.multiply(gelu, bias)
+
     return relay.Function([x, y, z, b], res)
 
 def benchmark(batch_size=1, batches=10, warmup=2):
@@ -112,6 +127,7 @@ def benchmark(batch_size=1, batches=10, warmup=2):
     rt_mod.run()
     tvm_output = rt_mod.get_output(0)
     print(tvm_output)
-    print(np.maximum(np.matmul(np.matmul(datax, datay), dataz) + datab, 0))
+    # numpy relu results
+    # print(np.maximum(np.matmul(np.matmul(datax, datay), dataz) + datab, 0))
 
 benchmark(batch_size=1)
