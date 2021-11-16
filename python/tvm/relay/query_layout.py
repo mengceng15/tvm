@@ -37,7 +37,7 @@ def AutoQuery(N,IC,KH,KW,OC,SH,SW,PH_L,PH_R,PW_L,PW_R,OH,OW):
     """
     return _ffi_api.AutoQuery(N,IC,KH,KW,OC,SH,SW,PH_L,PH_R,PW_L,PW_R,OH,OW)  # type: ignore
 
-def AutoQuery_matmul(M, K, N, BM, BN):
+def AutoQuery_matmul(M, K, N):
     """Get absolute value of the input element-wise.
 
     Parameters
@@ -53,4 +53,4 @@ def AutoQuery_matmul(M, K, N, BM, BN):
     y : PrimExpr
         The result.
     """
-    return _ffi_api.AutoQuery_matmul(M, K, N, BM, BN)  # type: ignore
+    return _ffi_api.AutoQuery_matmul(M, K, N)  # type: ignore

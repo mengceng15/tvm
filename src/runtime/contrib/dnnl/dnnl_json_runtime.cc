@@ -35,6 +35,9 @@
 #include <map>
 #include <sys/time.h>
 
+//debug
+#include <iostream>
+
 namespace tvm {
 namespace runtime {
 namespace contrib {
@@ -139,6 +142,8 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
           Pooling(nid, dnnl::algorithm::pooling_max);
         } else if ("nn.avg_pool2d" == op_name) {
           Pooling(nid, dnnl::algorithm::pooling_avg);
+        } else if ("nn.matmul" == op_name) {
+          Matmul(nid);
         } else {
           LOG(FATAL) << "Unsupported op: " << op_name;
         }
@@ -591,6 +596,65 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       {DNNL_ARG_SRC, pool2d_src_memory},
       {DNNL_ARG_DST, pool2d_dst_memory}
     });
+  }
+
+  void Matmul(const size_t& nid) {
+    auto node = nodes_[nid];
+
+    // Setup attributes.
+    auto data_entry = node.GetInputs()[0];
+    auto weight_entry = node.GetInputs()[1];
+
+    dnnl::memory::dims input_shape = nodes_[data_entry.id_].GetOpShape()[data_entry.index_];
+    dnnl::memory::dims weight_shape = nodes_[weight_entry.id_].GetOpShape()[weight_entry.index_];
+
+    dnnl::memory::dim M = input_shape[0],  // batch size
+        K = input_shape[1],               // input channels
+        N = weight_shape[1];              // output channels
+
+    // debug
+    // std::cout << "dim M " << M << std::endl;
+    // std::cout << "dim K " << K << std::endl;
+    // std::cout << "dim N " << N << std::endl;
+
+    // Memory shapes.
+    dnnl::memory::dims data_dims = {M, K};
+    dnnl::memory::dims weight_dims = {K, N};
+    dnnl::memory::dims bias_dims = {M, N};
+    dnnl::memory::dims out_dims = {M, N};
+
+    // Memory descriptions.
+    auto data_md = dnnl::memory::desc({data_dims, dt::f32, tag::ab});
+    auto weight_md = dnnl::memory::desc({weight_dims, dt::f32, tag::ab});
+    auto bias_md = dnnl::memory::desc({bias_dims, dt::f32, tag::ab});
+    auto dst_md = dnnl::memory::desc({out_dims, dt::f32, tag::ab});
+
+    auto matmul_desc = dnnl::matmul::desc(data_md, weight_md, bias_md, dst_md);
+    auto matmul_prim_desc = dnnl::matmul::primitive_desc(matmul_desc, engine_);
+    auto matmul = dnnl::matmul(matmul_prim_desc);
+    net_.push_back(matmul);
+
+    // Memories.
+    auto data_memory = BindDNNLMemory(data_entry, data_md);
+    auto weight_memory = BindDNNLMemory(weight_entry, weight_md);
+    auto bias_memory = dnnl::memory(bias_md, engine_);
+   
+    JSONGraphNodeEntry out_entry(nid, 0);
+    auto dst_memory = BindDNNLMemory(out_entry, matmul_prim_desc.dst_desc());
+
+    std::vector<float> bias_data(M * N, 0.0f);
+    float* dst = static_cast<float*>(bias_memory.get_data_handle());
+    std::copy(&bias_data[0], &bias_data[0] + M * N, dst);
+
+    // debug
+    // for (auto i = 0; i < M * N; i ++) {
+    //     std::cout << "bias_memory[" << i << "] " << *((float *)bias_memory.get_data_handle() + i) << std::endl;
+    // }
+
+    net_args_.push_back({{DNNL_ARG_SRC, data_memory},
+                         {DNNL_ARG_WEIGHTS, weight_memory},
+                         {DNNL_ARG_BIAS, bias_memory},
+                         {DNNL_ARG_DST, dst_memory}});
   }
 
   // Read from DNNL memory (+offset) and write to the handle.

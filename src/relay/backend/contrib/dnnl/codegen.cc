@@ -150,6 +150,20 @@ std::vector<std::string> Multiply(const CallNode* call) {
   return args;
 }
 
+// debug
+// std::vector<std::string> Matmul(const CallNode* call) {
+//   std::vector<std::string> args;
+//   auto ishape = GetShape(call->args[0]->checked_type());
+//   auto wshape = GetShape(call->args[1]->checked_type());
+
+//   // Args: M, K, N
+//   args.push_back(std::to_string(ishape[0]));
+//   args.push_back(std::to_string(ishape[1]));
+//   args.push_back(std::to_string(wshape[1]));
+
+//   return args;
+// }
+
 // TODO(@zhiics, @comaniac): This is a basic implementation. We should implement
 // all utilities and make a base class for users to implement.
 class CodegenDNNL : public MemoizedExprTranslator<std::vector<Output>>, public CodegenCBase {
@@ -251,6 +265,8 @@ class CodegenDNNL : public MemoizedExprTranslator<std::vector<Output>>, public C
         {"nn.conv2d", {"dnnl_conv2d", Conv2d}}, {"nn.dense", {"dnnl_dense", Dense}},
         {"nn.relu", {"dnnl_relu", Relu}},       {"nn.batch_norm", {"dnnl_bn", BatchNorm}},
         {"add", {"dnnl_binary_op", Add}},       {"multiply", {"dnnl_binary_op", Multiply}},
+        // debug
+        // {"nn.matmul", {"dnnl_matmul", Matmul}},
     };
 
     const auto op_name = GetRef<Op>(op_node)->name;
