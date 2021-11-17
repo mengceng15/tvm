@@ -513,6 +513,9 @@ class DNNLJSONSerializer : public backend::contrib::JSONSerializer {
       } else if (name == "dnnl.matmul_bias") {
         call = GetRootCall(fn->body.as<CallNode>(), 1, {"nn.matmul", "add"});
         ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name == "dnnl.matmul_bias_mul") {
+        call = GetRootCall(fn->body.as<CallNode>(), 2, {"nn.matmul", "add", "multiply"});
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
       } else {
         LOG(FATAL) << "Unrecognized DNNL pattern: " << name;
       }

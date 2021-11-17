@@ -8,6 +8,8 @@ import warnings
 
 import math
 
+from tvm.relay.op.tensor import bitwise_and
+
 # from torch._C import T
 warnings.filterwarnings("ignore")
 # from mxnet.gluon.model_zoo.vision import *
@@ -51,7 +53,18 @@ def update_lib(lib):
     lib = tvm.runtime.load_module(lib_path)
     return lib
 
-def example():
+def matmul_bias_example():
+    x = relay.var("x", relay.TensorType((4, 6), "float32"))
+    y = relay.var("y", relay.TensorType((6, 3), "float32"))
+    z = relay.var("z", relay.TensorType((3, 2), "float32"))
+    b = relay.var("b", relay.TensorType((4, 2), "float32"))
+    matmul0 = nn.matmul(x, y)
+    matmul1 = nn.matmul(matmul0, z)
+    bias = relay.add(matmul1, b)
+
+    return relay.Function([x, y, z, b], bias)
+
+def matmul_bias_relu_example():
     x = relay.var("x", relay.TensorType((4, 6), "float32"))
     y = relay.var("y", relay.TensorType((6, 3), "float32"))
     z = relay.var("z", relay.TensorType((3, 2), "float32"))
@@ -60,7 +73,18 @@ def example():
     matmul1 = nn.matmul(matmul0, z)
     bias = relay.add(matmul1, b)
     # relu
-    # res = nn.relu(bias)
+    res = nn.relu(bias)
+
+    return relay.Function([x, y, z, b], res)
+
+def matmul_bias_gelu_example():
+    x = relay.var("x", relay.TensorType((4, 6), "float32"))
+    y = relay.var("y", relay.TensorType((6, 3), "float32"))
+    z = relay.var("z", relay.TensorType((3, 2), "float32"))
+    b = relay.var("b", relay.TensorType((4, 2), "float32"))
+    matmul0 = nn.matmul(x, y)
+    matmul1 = nn.matmul(matmul0, z)
+    bias = relay.add(matmul1, b)
     # gelu
     const1 = relay.const(0.044715)
     const2 = relay.const(math.sqrt(2 / math.pi))
@@ -75,10 +99,23 @@ def example():
 
     return relay.Function([x, y, z, b], res)
 
+def matmul_bias_mul_example():
+    x = relay.var("x", relay.TensorType((4, 6), "float32"))
+    y = relay.var("y", relay.TensorType((6, 3), "float32"))
+    z = relay.var("z", relay.TensorType((3, 2), "float32"))
+    b = relay.var("b", relay.TensorType((4, 2), "float32"))
+    data_mul = relay.var("data_mul", relay.TensorType((4, 2), "float32"))
+    matmul0 = nn.matmul(x, y)
+    matmul1 = nn.matmul(matmul0, z)
+    bias = relay.add(matmul1, b)
+    bias = relay.multiply(bias, data_mul)
+
+    return relay.Function([x, y, z, b, data_mul], bias)
+
 def benchmark(batch_size=1, batches=10, warmup=2):
     ctx = tvm.cpu()
 
-    f = example()
+    f = matmul_bias_mul_example()
     mod = tvm.IRModule.from_expr(f)
     print(mod['main'].astext(show_meta_data=False))
 
@@ -119,11 +156,13 @@ def benchmark(batch_size=1, batches=10, warmup=2):
     datay = np.random.uniform(size=(6, 3)) - 0.5
     dataz = np.random.uniform(size=(3, 2)) - 0.5
     datab = np.random.uniform(size=(4, 2)) - 0.5
+    datamul = np.random.uniform(size=(4, 2)) - 0.5
 
     rt_mod.set_input("x", tvm.nd.array(datax.astype("float32")))
     rt_mod.set_input("y", tvm.nd.array(datay.astype("float32")))
     rt_mod.set_input("z", tvm.nd.array(dataz.astype("float32")))
     rt_mod.set_input("b", tvm.nd.array(datab.astype("float32")))
+    rt_mod.set_input("data_mul", tvm.nd.array(datamul.astype("float32")))
     rt_mod.run()
     tvm_output = rt_mod.get_output(0)
     print(tvm_output)

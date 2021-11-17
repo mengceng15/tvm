@@ -150,6 +150,8 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
           Matmul(nid, true);  
         } else if ("dnnl.matmul_bias_gelu" == op_name) {
           Matmul(nid, true, "gelu");
+        } else if ("dnnl.matmul_bias_mul" == op_name) {
+          Matmul(nid, true, "none", true);
         } else {
           LOG(FATAL) << "Unsupported op: " << op_name;
         }
@@ -604,7 +606,8 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     });
   }
 
-  void Matmul(const size_t& nid, const bool has_bias = false, const std::string act_type="none") {
+  void Matmul(const size_t& nid, const bool has_bias = false, const std::string act_type = "none",
+    const bool has_mul = false) {
     auto node = nodes_[nid];
 
     // Setup attributes.
@@ -622,6 +625,9 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     // std::cout << "dim M " << M << std::endl;
     // std::cout << "dim K " << K << std::endl;
     // std::cout << "dim N " << N << std::endl;
+    // std::cout << "has_bias " << has_bias << std::endl;
+    // std::cout << "act_type " << act_type << std::endl;
+    // std::cout << "has_mul " << has_mul << std::endl;
 
     // Memory shapes.
     dnnl::memory::dims data_dims = {M, K};
@@ -646,6 +652,9 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     if (act_type == "gelu") {
       ops.append_eltwise(1.f, dnnl::algorithm::eltwise_gelu, 0.f, 1.f);
     }
+    if (has_mul == true) {
+      ops.append_binary(dnnl::algorithm::binary_mul, dst_md);
+    }
     dnnl::primitive_attr attr;
     attr.set_post_ops(ops);
     
@@ -657,12 +666,17 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     auto data_memory = BindDNNLMemory(data_entry, data_md);
     auto weight_memory = BindDNNLMemory(weight_entry, weight_md);
     auto bias_memory = dnnl::memory(bias_md, engine_);
+    auto dst_memory = dnnl::memory(dst_md, engine_);
+    JSONGraphNodeEntry out_entry(nid, 0);
     if (has_bias) {
       auto bias_entry = node.GetInputs()[2];
       BindDNNLMemory(bias_entry, bias_memory);
     } 
-    JSONGraphNodeEntry out_entry(nid, 0);
-    auto dst_memory = BindDNNLMemory(out_entry, matmul_prim_desc.dst_desc());
+    if (has_mul) {
+      auto dst_entry = node.GetInputs()[3];
+      dst_memory = BindDNNLMemory(dst_entry, dst_memory);
+    }
+    BindDNNLMemory(out_entry, dst_memory);
 
     // std::vector<float> bias_data(M * N, 0.0f);
     // float* dst = static_cast<float*>(bias_memory.get_data_handle());
