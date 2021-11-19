@@ -688,11 +688,19 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     // }
 
     if (has_bias) {
-        net_args_.push_back({{DNNL_ARG_SRC, data_memory},
-                            {DNNL_ARG_WEIGHTS, weight_memory},
-                            {DNNL_ARG_BIAS, bias_memory},
-                            {DNNL_ARG_DST, dst_memory}});
-    } else {
+        if (has_mul) {
+            net_args_.push_back({{DNNL_ARG_SRC, data_memory},
+                                {DNNL_ARG_WEIGHTS, weight_memory},
+                                {DNNL_ARG_BIAS, bias_memory},
+                                {DNNL_ARG_DST, dst_memory},
+                                {DNNL_ARG_ATTR_MULTIPLE_POST_OP(0) | DNNL_ARG_SRC_1, dst_memory}});
+        } else {
+            net_args_.push_back({{DNNL_ARG_SRC, data_memory},
+                                {DNNL_ARG_WEIGHTS, weight_memory},
+                                {DNNL_ARG_BIAS, bias_memory},
+                                {DNNL_ARG_DST, dst_memory}});
+        }
+        } else {
         net_args_.push_back({{DNNL_ARG_SRC, data_memory},
                             {DNNL_ARG_WEIGHTS, weight_memory},
                             {DNNL_ARG_DST, dst_memory}});
