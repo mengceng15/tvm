@@ -121,9 +121,9 @@ def benchmark(batch_size=1, batches=10, warmup=2):
 
     mod = relay.transform.MergeComposite(pattern_table())(mod)
     print(mod['main'].astext(show_meta_data=False))
-    mod = relay.transform.AnnotateTarget(["dnnl"])(mod) # Output: Figure 2
-    mod = relay.transform.MergeCompilerRegions()(mod) # Output: Figure 3
-    mod = relay.transform.PartitionGraph()(mod) # Output: Figure 4
+    mod = relay.transform.AnnotateTarget(["dnnl"])(mod)
+    mod = relay.transform.MergeCompilerRegions()(mod)
+    mod = relay.transform.PartitionGraph()(mod)
     # print(mod['main'].astext(show_meta_data=False))
 
     # seq = tvm.transform.Sequential(
@@ -158,15 +158,23 @@ def benchmark(batch_size=1, batches=10, warmup=2):
     datab = np.random.uniform(size=(4, 2)) - 0.5
     datamul = np.random.uniform(size=(4, 2)) - 0.5
 
+    # print(datax)
+    # print(datay)
+    # print(dataz)
+    # print(datab)
+    # print(datamul)
+
     rt_mod.set_input("x", tvm.nd.array(datax.astype("float32")))
     rt_mod.set_input("y", tvm.nd.array(datay.astype("float32")))
     rt_mod.set_input("z", tvm.nd.array(dataz.astype("float32")))
     rt_mod.set_input("b", tvm.nd.array(datab.astype("float32")))
     rt_mod.set_input("data_mul", tvm.nd.array(datamul.astype("float32")))
+    rt_mod.get_output(0).copyfrom(tvm.nd.array(datamul.astype("float32")))
     rt_mod.run()
     tvm_output = rt_mod.get_output(0)
     print(tvm_output)
     # numpy relu results
     # print(np.maximum(np.matmul(np.matmul(datax, datay), dataz) + datab, 0))
+    print((np.matmul(np.matmul(datax, datay), dataz) + datab) * datamul)
 
 benchmark(batch_size=1)

@@ -666,7 +666,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     auto data_memory = BindDNNLMemory(data_entry, data_md);
     auto weight_memory = BindDNNLMemory(weight_entry, weight_md);
     auto bias_memory = dnnl::memory(bias_md, engine_);
-    auto dst_memory = dnnl::memory(dst_md, engine_);
+    auto dst_memory = dnnl::memory(matmul_prim_desc.dst_desc(), engine_);
     JSONGraphNodeEntry out_entry(nid, 0);
     if (has_bias) {
       auto bias_entry = node.GetInputs()[2];
@@ -674,18 +674,9 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     } 
     if (has_mul) {
       auto dst_entry = node.GetInputs()[3];
-      dst_memory = BindDNNLMemory(dst_entry, dst_memory);
+       BindDNNLMemory(dst_entry, dst_memory);
     }
     BindDNNLMemory(out_entry, dst_memory);
-
-    // std::vector<float> bias_data(M * N, 0.0f);
-    // float* dst = static_cast<float*>(bias_memory.get_data_handle());
-    // std::copy(&bias_data[0], &bias_data[0] + M * N, dst);
-
-    // debug
-    // for (auto i = 0; i < M * N; i ++) {
-    //     std::cout << "bias_memory[" << i << "] " << *((float *)bias_memory.get_data_handle() + i) << std::endl;
-    // }
 
     if (has_bias) {
         if (has_mul) {
