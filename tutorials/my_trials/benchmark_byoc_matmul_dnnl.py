@@ -127,42 +127,17 @@ def matmul_bias_mul_add_example():
 
     return relay.Function([x, y, z, b, data_mul, data_add], add)
 
-def benchmark(batch_size=1, batches=10, warmup=2):
+def check_correctness(func, batch_size=1, batches=10, warmup=2):
     ctx = tvm.cpu()
-
-    f = matmul_bias_mul_add_example()
+    f = func()
     mod = tvm.IRModule.from_expr(f)
-    print(mod['main'].astext(show_meta_data=False))
+    # print(mod['main'].astext(show_meta_data=False))
 
     mod = relay.transform.MergeComposite(pattern_table())(mod)
-    print(mod['main'].astext(show_meta_data=False))
     mod = relay.transform.AnnotateTarget(["dnnl"])(mod)
     mod = relay.transform.MergeCompilerRegions()(mod)
     mod = relay.transform.PartitionGraph()(mod)
     # print(mod['main'].astext(show_meta_data=False))
-
-    # seq = tvm.transform.Sequential(
-    #     [
-    #         relay.transform.RemoveUnusedFunctions(),
-    #         tvm.transform.PrintIR(),
-    #         relay.transform.AlterOpLayout(),
-    #         tvm.transform.PrintIR(),
-    #         relay.transform.FoldConstant(),
-    #         tvm.transform.PrintIR(),
-    #         relay.transform.AnnotateTarget("dnnl"),
-    #         tvm.transform.PrintIR(),
-    #         relay.transform.MergeCompilerRegions(),
-    #         tvm.transform.PrintIR(),
-    #     ]
-    # )
-
-    # with tvm.transform.PassContext(opt_level=3):
-    #     with tvm.target.Target("llvm"):
-    #         mod = seq(mod)
-    # print(mod['main'].astext(show_meta_data=False))
-
-    # with relay.build_config(opt_level=3):
-    #     graph, lib, params = relay.build(mod, target, params=params)
 
     json, lib, params = relay.build(mod, "llvm")
     rt_mod = tvm.contrib.graph_executor.create(json, lib, ctx)#Create a runtime executor module given a graph and module.
@@ -171,28 +146,36 @@ def benchmark(batch_size=1, batches=10, warmup=2):
     datay = np.random.uniform(size=(6, 3)) - 0.5
     dataz = np.random.uniform(size=(3, 2)) - 0.5
     datab = np.random.uniform(size=(4, 2)) - 0.5
-    datamul = np.random.uniform(size=(4, 2)) - 0.5
-    dataadd = np.random.uniform(size=(4, 2)) - 0.5
-
-    # print(datax)
-    # print(datay)
-    # print(dataz)
-    # print(datab)
-    # print(datamul)
+    if func == matmul_bias_mul_example or func == matmul_bias_mul_add_example:
+        datamul = np.random.uniform(size=(4, 2)) - 0.5
+    if func == matmul_bias_mul_add_example:
+        dataadd = np.random.uniform(size=(4, 2)) - 0.5
 
     rt_mod.set_input("x", tvm.nd.array(datax.astype("float32")))
     rt_mod.set_input("y", tvm.nd.array(datay.astype("float32")))
     rt_mod.set_input("z", tvm.nd.array(dataz.astype("float32")))
     rt_mod.set_input("b", tvm.nd.array(datab.astype("float32")))
-    rt_mod.set_input("data_mul", tvm.nd.array(datamul.astype("float32")))
-    rt_mod.set_input("data_add", tvm.nd.array(dataadd.astype("float32")))
-    rt_mod.get_output(0).copyfrom(tvm.nd.array(dataadd.astype("float32")))
+    if func == matmul_bias_mul_example or func == matmul_bias_mul_add_example:
+        rt_mod.set_input("data_mul", tvm.nd.array(datamul.astype("float32")))
+    if func == matmul_bias_mul_add_example:
+        rt_mod.set_input("data_add", tvm.nd.array(dataadd.astype("float32")))
+    if func == matmul_bias_mul_example:
+        rt_mod.get_output(0).copyfrom(tvm.nd.array(datamul.astype("float32")))
+    if func == matmul_bias_mul_add_example:
+        rt_mod.get_output(0).copyfrom(tvm.nd.array(dataadd.astype("float32")))
     rt_mod.run()
-    tvm_output = rt_mod.get_output(0)
-    print(tvm_output)
-    # numpy relu results
-    # print(np.maximum(np.matmul(np.matmul(datax, datay), dataz) + datab, 0))
-    # print((np.matmul(np.matmul(datax, datay), dataz) + datab) * datamul)
-    print((np.matmul(np.matmul(datax, datay), dataz) + datab) * datamul + dataadd)
+    tvm_output = rt_mod.get_output(0).numpy()
 
-benchmark(batch_size=1)
+    if func == matmul_bias_example:
+        np.testing.assert_almost_equal(np.matmul(np.matmul(datax, datay), dataz) + datab, tvm_output)
+    if func == matmul_bias_relu_example:
+        np.testing.assert_almost_equal(np.maximum(np.matmul(np.matmul(datax, datay), dataz) + datab, 0), tvm_output)
+    if func == matmul_bias_mul_example:
+        np.testing.assert_almost_equal((np.matmul(np.matmul(datax, datay), dataz) + datab) * datamul, tvm_output)
+    if func == matmul_bias_mul_add_example:
+        np.testing.assert_almost_equal((np.matmul(np.matmul(datax, datay), dataz) + datab) * datamul + dataadd, tvm_output)
+
+check_correctness(matmul_bias_example)
+check_correctness(matmul_bias_relu_example)
+check_correctness(matmul_bias_mul_example)
+check_correctness(matmul_bias_mul_add_example)
