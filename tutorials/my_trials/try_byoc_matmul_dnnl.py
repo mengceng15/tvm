@@ -108,14 +108,29 @@ def matmul_bias_mul_example():
     matmul0 = nn.matmul(x, y)
     matmul1 = nn.matmul(matmul0, z)
     bias = relay.add(matmul1, b)
-    bias = relay.multiply(bias, data_mul)
+    mul = relay.multiply(bias, data_mul)
 
-    return relay.Function([x, y, z, b, data_mul], bias)
+    return relay.Function([x, y, z, b, data_mul], mul)
+
+def matmul_bias_mul_add_example():
+    x = relay.var("x", relay.TensorType((4, 6), "float32"))
+    y = relay.var("y", relay.TensorType((6, 3), "float32"))
+    z = relay.var("z", relay.TensorType((3, 2), "float32"))
+    b = relay.var("b", relay.TensorType((4, 2), "float32"))
+    data_mul = relay.var("data_mul", relay.TensorType((4, 2), "float32"))
+    data_add = relay.var("data_add", relay.TensorType((4, 2), "float32"))
+    matmul0 = nn.matmul(x, y)
+    matmul1 = nn.matmul(matmul0, z)
+    bias = relay.add(matmul1, b)
+    mul = relay.multiply(bias, data_mul)
+    add = relay.add(mul, data_add)
+
+    return relay.Function([x, y, z, b, data_mul, data_add], add)
 
 def benchmark(batch_size=1, batches=10, warmup=2):
     ctx = tvm.cpu()
 
-    f = matmul_bias_mul_example()
+    f = matmul_bias_mul_add_example()
     mod = tvm.IRModule.from_expr(f)
     print(mod['main'].astext(show_meta_data=False))
 
@@ -157,6 +172,7 @@ def benchmark(batch_size=1, batches=10, warmup=2):
     dataz = np.random.uniform(size=(3, 2)) - 0.5
     datab = np.random.uniform(size=(4, 2)) - 0.5
     datamul = np.random.uniform(size=(4, 2)) - 0.5
+    dataadd = np.random.uniform(size=(4, 2)) - 0.5
 
     # print(datax)
     # print(datay)
@@ -169,12 +185,14 @@ def benchmark(batch_size=1, batches=10, warmup=2):
     rt_mod.set_input("z", tvm.nd.array(dataz.astype("float32")))
     rt_mod.set_input("b", tvm.nd.array(datab.astype("float32")))
     rt_mod.set_input("data_mul", tvm.nd.array(datamul.astype("float32")))
-    rt_mod.get_output(0).copyfrom(tvm.nd.array(datamul.astype("float32")))
+    rt_mod.set_input("data_add", tvm.nd.array(dataadd.astype("float32")))
+    rt_mod.get_output(0).copyfrom(tvm.nd.array(dataadd.astype("float32")))
     rt_mod.run()
     tvm_output = rt_mod.get_output(0)
     print(tvm_output)
     # numpy relu results
     # print(np.maximum(np.matmul(np.matmul(datax, datay), dataz) + datab, 0))
-    print((np.matmul(np.matmul(datax, datay), dataz) + datab) * datamul)
+    # print((np.matmul(np.matmul(datax, datay), dataz) + datab) * datamul)
+    print((np.matmul(np.matmul(datax, datay), dataz) + datab) * datamul + dataadd)
 
 benchmark(batch_size=1)

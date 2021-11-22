@@ -152,6 +152,8 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
           Matmul(nid, true, "gelu");
         } else if ("dnnl.matmul_bias_mul" == op_name) {
           Matmul(nid, true, "none", true);
+        } else if ("dnnl.matmul_bias_mul_add" == op_name) {
+          Matmul(nid, true, "none", true, true);
         } else {
           LOG(FATAL) << "Unsupported op: " << op_name;
         }
@@ -607,7 +609,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
   }
 
   void Matmul(const size_t& nid, const bool has_bias = false, const std::string act_type = "none",
-    const bool has_mul = false) {
+    const bool has_mul = false, const bool has_add = false) {
     auto node = nodes_[nid];
 
     // Setup attributes.
@@ -620,14 +622,6 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     dnnl::memory::dim M = input_shape[0],  // batch size
         K = input_shape[1],               // input channels
         N = weight_shape[1];              // output channels
-
-    // debug
-    // std::cout << "dim M " << M << std::endl;
-    // std::cout << "dim K " << K << std::endl;
-    // std::cout << "dim N " << N << std::endl;
-    // std::cout << "has_bias " << has_bias << std::endl;
-    // std::cout << "act_type " << act_type << std::endl;
-    // std::cout << "has_mul " << has_mul << std::endl;
 
     // Memory shapes.
     dnnl::memory::dims data_dims = {M, K};
@@ -655,6 +649,9 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     if (has_mul == true) {
       ops.append_binary(dnnl::algorithm::binary_mul, dst_md);
     }
+    if (has_add == true) {
+      ops.append_binary(dnnl::algorithm::binary_add, dst_md);
+    }
     dnnl::primitive_attr attr;
     attr.set_post_ops(ops);
     
@@ -666,6 +663,8 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     auto data_memory = BindDNNLMemory(data_entry, data_md);
     auto weight_memory = BindDNNLMemory(weight_entry, weight_md);
     auto bias_memory = dnnl::memory(bias_md, engine_);
+    auto mul_memory = dnnl::memory(matmul_prim_desc.dst_desc(), engine_);
+    auto add_memory = dnnl::memory(matmul_prim_desc.dst_desc(), engine_);
     auto dst_memory = dnnl::memory(matmul_prim_desc.dst_desc(), engine_);
     JSONGraphNodeEntry out_entry(nid, 0);
     if (has_bias) {
@@ -673,18 +672,31 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       BindDNNLMemory(bias_entry, bias_memory);
     } 
     if (has_mul) {
-      auto dst_entry = node.GetInputs()[3];
-       BindDNNLMemory(dst_entry, dst_memory);
+      auto mul_entry = node.GetInputs()[3];
+      dst_memory = BindDNNLMemory(mul_entry, mul_memory);
+    }
+    if (has_add) {
+      auto add_entry = node.GetInputs()[4];
+      dst_memory = BindDNNLMemory(add_entry, add_memory);
     }
     BindDNNLMemory(out_entry, dst_memory);
 
     if (has_bias) {
         if (has_mul) {
-            net_args_.push_back({{DNNL_ARG_SRC, data_memory},
-                                {DNNL_ARG_WEIGHTS, weight_memory},
-                                {DNNL_ARG_BIAS, bias_memory},
-                                {DNNL_ARG_DST, dst_memory},
-                                {DNNL_ARG_ATTR_MULTIPLE_POST_OP(0) | DNNL_ARG_SRC_1, dst_memory}});
+            if (has_add) {
+                net_args_.push_back({{DNNL_ARG_SRC, data_memory},
+                                    {DNNL_ARG_WEIGHTS, weight_memory},
+                                    {DNNL_ARG_BIAS, bias_memory},
+                                    {DNNL_ARG_DST, dst_memory},
+                                    {DNNL_ARG_ATTR_MULTIPLE_POST_OP(0) | DNNL_ARG_SRC_1, mul_memory},
+                                    {DNNL_ARG_ATTR_MULTIPLE_POST_OP(1) | DNNL_ARG_SRC_1, dst_memory}});
+            } else {
+                net_args_.push_back({{DNNL_ARG_SRC, data_memory},
+                                    {DNNL_ARG_WEIGHTS, weight_memory},
+                                    {DNNL_ARG_BIAS, bias_memory},
+                                    {DNNL_ARG_DST, dst_memory},
+                                    {DNNL_ARG_ATTR_MULTIPLE_POST_OP(0) | DNNL_ARG_SRC_1, dst_memory}});
+            }
         } else {
             net_args_.push_back({{DNNL_ARG_SRC, data_memory},
                                 {DNNL_ARG_WEIGHTS, weight_memory},
