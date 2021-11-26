@@ -71,7 +71,7 @@ _register_external_op_helper("nn.relu")
 _register_external_op_helper("concatenate")
 _register_external_op_helper("nn.max_pool2d")
 _register_external_op_helper("nn.avg_pool2d")
-_register_external_op_helper("nn.matmul")
+# _register_external_op_helper("nn.matmul")
 
 def make_pattern(with_bias=True, with_relu=True):
     data = wildcard()
@@ -110,48 +110,42 @@ def make_conv_add_sum_relu_pattern():
     out = is_op("nn.relu")(out)
     return out
 
-def make_matmul_pattern(with_bias=False, activation_type = "none"):
+def make_dense_bias_gelu_pattern():
     data = wildcard()
     weight = wildcard()
     bias = wildcard()
-    matmul = is_op("nn.matmul")(data, weight)
-    if with_bias:
-        matmul_out = is_op("add")(matmul, bias)
-    else:
-        matmul_out = matmul
-    if (activation_type == "relu") :
-        matmul_out = is_op("nn.relu")(matmul_out)
-    if (activation_type == "gelu") :
-        const1 = is_expr(const(0.044715))
-        const2 = is_expr(const(math.sqrt(2 / math.pi)))
-        gelu = is_op("power")(matmul_out, is_expr(const(3, dtype="float32")))
-        gelu = is_op("multiply")(gelu, const1)
-        gelu = is_op("add")(gelu, matmul_out)
-        gelu = is_op("multiply")(gelu, const2)
-        gelu = is_op("tanh")(gelu)
-        gelu = is_op("add")(gelu, is_expr(const(1, dtype="float32")))
-        gelu = is_op("multiply")(gelu, is_expr(const(0.5)))
-        matmul_out = is_op("multiply")(gelu, matmul_out)
-    return matmul_out
+    dense = is_op("nn.dense")(data, weight)
+    dense_out = is_op("add")(dense, bias)
+    const1 = is_expr(const(0.044715))
+    const2 = is_expr(const(math.sqrt(2 / math.pi)))
+    gelu = is_op("power")(dense_out, is_expr(const(3, dtype="float32")))
+    gelu = is_op("multiply")(gelu, const1)
+    gelu = is_op("add")(gelu, dense_out)
+    gelu = is_op("multiply")(gelu, const2)
+    gelu = is_op("tanh")(gelu)
+    gelu = is_op("add")(gelu, is_expr(const(1, dtype="float32")))
+    gelu = is_op("multiply")(gelu, is_expr(const(0.5)))
+    dense_out = is_op("multiply")(gelu, dense_out)
+    return dense_out
 
-def make_matmul_bias_mul_pattern():
+def make_dense_bias_mul_pattern():
     data1 = wildcard()
     weight = wildcard()
     bias = wildcard()
     data2 = wildcard()
-    matmul = is_op("nn.matmul")(data1, weight)
-    bias = is_op("add")(matmul, bias)
+    dense = is_op("nn.dense")(data1, weight)
+    bias = is_op("add")(dense, bias)
     out = is_op("multiply")(bias, data2)
     return out
 
-def make_matmul_bias_mul_add_pattern():
+def make_dense_bias_mul_add_pattern():
     data1 = wildcard()
     weight = wildcard()
     bias = wildcard()
     data2 = wildcard()
     data3 = wildcard()
-    matmul = is_op("nn.matmul")(data1, weight)
-    bias = is_op("add")(matmul, bias)
+    dense = is_op("nn.dense")(data1, weight)
+    bias = is_op("add")(dense, bias)
     mul = is_op("multiply")(bias, data2)
     out = is_op("add")(mul, data3)
     return out
@@ -163,13 +157,11 @@ def pattern_table():
     conv2d_bias_pat = ("dnnl.conv2d_bias", make_pattern(with_bias=True, with_relu=False))
     dense_bias_relu_pat = ("dnnl.dense_bias_relu", make_dense_pattern(with_bias=True, with_relu=True))
     dense_bias_pat = ("dnnl.dense_bias", make_dense_pattern(with_bias=True))
-    matmul_bias_relu_pat = ("dnnl.matmul_bias_relu", make_matmul_pattern(with_bias=True, activation_type="relu"))
-    matmul_bias_gelu_pat = ("dnnl.matmul_bias_gelu", make_matmul_pattern(with_bias=True, activation_type="gelu"))
-    matmul_bias_pat = ("dnnl.matmul_bias", make_matmul_pattern(with_bias=True))
-    matmul_bias_mul_pat = ("dnnl.matmul_bias_mul", make_matmul_bias_mul_pattern())
-    matmul_bias_mul_add_pat = ("dnnl.matmul_bias_mul_add", make_matmul_bias_mul_add_pattern())
-    dnnl_patterns = [conv2d_bias_sum_relu_pat, conv2d_bias_relu_pat, conv2d_bias_pat, dense_bias_relu_pat,
-     dense_bias_pat, matmul_bias_relu_pat, matmul_bias_gelu_pat, matmul_bias_mul_add_pat, matmul_bias_mul_pat,
-     matmul_bias_pat] #conv2d_relu_pat, 
+
+    dense_bias_gelu_pat = ("dnnl.dense_bias_gelu", make_dense_bias_gelu_pattern())
+    dense_bias_mul_pat = ("dnnl.dense_bias_mul", make_dense_bias_mul_pattern())
+    dense_bias_mul_add_pat = ("dnnl.dense_bias_mul_add", make_dense_bias_mul_add_pattern())
+    dnnl_patterns = [conv2d_bias_sum_relu_pat, conv2d_bias_relu_pat, conv2d_bias_pat, dense_bias_gelu_pat, 
+     dense_bias_mul_add_pat, dense_bias_relu_pat, dense_bias_mul_pat, dense_bias_pat] #conv2d_relu_pat, 
     return dnnl_patterns
     

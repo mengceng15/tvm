@@ -88,10 +88,18 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     for (size_t i = 0; i < input_nodes_.size(); ++i) {
       auto eid = EntryID(input_nodes_[i], 0);  
       entry_out_mem_[eid].first.set_data_handle(data_entry_[eid]->data);
+      // for (auto id = 0; id < 10; id++) {
+      //     std::cout << *(static_cast<float*>(data_entry_[eid]->data) + id) << " ";
+      // }
+      // std::cout << std::endl;
     }
     for (size_t i = 0; i < outputs_.size(); ++i) {
       auto eid = EntryID(outputs_[i]);
       entry_out_mem_[eid].first.set_data_handle(data_entry_[eid]->data);
+      // for (auto id = 0; id < 10; id++) {
+      //     std::cout << *(static_cast<float*>(data_entry_[eid]->data) + id) << " ";
+      // }
+      // std::cout << std::endl;
     }
     // Invoke the engine through intepreting the stream.
     for (size_t i = 0; i < net_.size(); ++i) {
@@ -125,7 +133,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
         } else if ("nn.dense" == op_name) {
           Dense(nid);
         } else if ("dnnl.dense_bias_relu" == op_name) {
-          Dense(nid, true, true);
+          Dense(nid, true, "relu");
         } else if ("dnnl.dense_bias" == op_name) {
           Dense(nid, true);
         } else if ("nn.batch_norm" == op_name) {
@@ -142,18 +150,12 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
           Pooling(nid, dnnl::algorithm::pooling_max);
         } else if ("nn.avg_pool2d" == op_name) {
           Pooling(nid, dnnl::algorithm::pooling_avg);
-        } else if ("nn.matmul" == op_name) {
-          Matmul(nid);
-        } else if ("dnnl.matmul_bias_relu" == op_name) {
-          Matmul(nid, true, "relu");
-        } else if ("dnnl.matmul_bias" == op_name) {
-          Matmul(nid, true);  
-        } else if ("dnnl.matmul_bias_gelu" == op_name) {
-          Matmul(nid, true, "gelu");
-        } else if ("dnnl.matmul_bias_mul" == op_name) {
-          Matmul(nid, true, "none", true);
-        } else if ("dnnl.matmul_bias_mul_add" == op_name) {
-          Matmul(nid, true, "none", true, true);
+        } else if ("dnnl.dense_bias_gelu" == op_name) {
+          Dense(nid, true, "gelu");
+        } else if ("dnnl.dense_bias_mul" == op_name) {
+          Dense(nid, true, "none", true);
+        } else if ("dnnl.dense_bias_mul_add" == op_name) {
+          Dense(nid, true, "none", true, true);
         } else {
           LOG(FATAL) << "Unsupported op: " << op_name;
         }
@@ -315,7 +317,8 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     
   }
 
-  void Dense(const size_t& nid, const bool has_bias = false, const bool has_relu=false) {
+  void Dense(const size_t& nid, const bool has_bias = false, const std::string act_type = "none",
+             const bool has_mul = false, const bool has_add = false) {
     auto node = nodes_[nid];
 
     // Setup attributes.
@@ -348,15 +351,23 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
                                                         weight_md, dst_md);
 
     // Enable ReLU
-    dnnl::post_ops ops;
-    if (has_relu) {
+        dnnl::post_ops ops;
+    if (act_type == "relu") {
       ops.append_eltwise(1.f, dnnl::algorithm::eltwise_relu, 0.f, 1.f);
+    }
+    if (act_type == "gelu") {
+      ops.append_eltwise(1.f, dnnl::algorithm::eltwise_gelu, 0.f, 1.f);
+    }
+    if (has_mul == true) {
+      ops.append_binary(dnnl::algorithm::binary_mul, dst_md);
+    }
+    if (has_add == true) {
+      ops.append_binary(dnnl::algorithm::binary_add, dst_md);
     }
     dnnl::primitive_attr attr;
     attr.set_post_ops(ops);
 
     auto dense_prim_desc = dnnl::inner_product_forward::primitive_desc(dense_desc, attr, engine_);
-
     auto dense = dnnl::inner_product_forward(dense_prim_desc);
     net_.push_back(dense);
 
@@ -364,25 +375,53 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     auto data_memory = BindDNNLMemory(data_entry, data_md);
     auto weight_memory = BindDNNLMemory(weight_entry, weight_md);
     auto bias_memory = dnnl::memory(bias_md, engine_);
+    // std::cout << "dense_prim_desc.dst_desc().dims().size(): " << dense_prim_desc.dst_desc().dims().size() << std::endl;
+    // std::cout << dense_prim_desc.dst_desc().dims()[0] << " " << dense_prim_desc.dst_desc().dims()[1] << std::endl;
+    auto mul_memory = dnnl::memory(dense_prim_desc.dst_desc(), engine_);
+    auto add_memory = dnnl::memory(dense_prim_desc.dst_desc(), engine_);
+    auto dst_memory = dnnl::memory(dense_prim_desc.dst_desc(), engine_);
+    JSONGraphNodeEntry out_entry(nid, 0);
     if (has_bias) {
       auto bias_entry = node.GetInputs()[2];
       BindDNNLMemory(bias_entry, bias_memory);
     } 
-    JSONGraphNodeEntry out_entry(nid, 0);
-    auto dst_memory = BindDNNLMemory(out_entry, dense_prim_desc.dst_desc());
+    if (has_mul) {
+      auto mul_entry = node.GetInputs()[3];
+      dst_memory = BindDNNLMemory(mul_entry, mul_memory);
+    }
+    if (has_add) {
+      auto add_entry = node.GetInputs()[4];
+      dst_memory = BindDNNLMemory(add_entry, add_memory);
+    }
+    BindDNNLMemory(out_entry, dst_memory);
 
     if (has_bias) {
-      net_args_.push_back({{DNNL_ARG_SRC, data_memory},
-                         {DNNL_ARG_WEIGHTS, weight_memory},
-                         {DNNL_ARG_BIAS, bias_memory},
-                         {DNNL_ARG_DST, dst_memory}});
+        if (has_mul) {
+            if (has_add) {
+                net_args_.push_back({{DNNL_ARG_SRC, data_memory},
+                                    {DNNL_ARG_WEIGHTS, weight_memory},
+                                    {DNNL_ARG_BIAS, bias_memory},
+                                    {DNNL_ARG_DST, dst_memory},
+                                    {DNNL_ARG_ATTR_MULTIPLE_POST_OP(0) | DNNL_ARG_SRC_1, mul_memory},
+                                    {DNNL_ARG_ATTR_MULTIPLE_POST_OP(1) | DNNL_ARG_SRC_1, dst_memory}});
+            } else {
+                net_args_.push_back({{DNNL_ARG_SRC, data_memory},
+                                    {DNNL_ARG_WEIGHTS, weight_memory},
+                                    {DNNL_ARG_BIAS, bias_memory},
+                                    {DNNL_ARG_DST, dst_memory},
+                                    {DNNL_ARG_ATTR_MULTIPLE_POST_OP(0) | DNNL_ARG_SRC_1, dst_memory}});
+            }
+        } else {
+            net_args_.push_back({{DNNL_ARG_SRC, data_memory},
+                                {DNNL_ARG_WEIGHTS, weight_memory},
+                                {DNNL_ARG_BIAS, bias_memory},
+                                {DNNL_ARG_DST, dst_memory}});
+        }
+    } else {
+        net_args_.push_back({{DNNL_ARG_SRC, data_memory},
+                            {DNNL_ARG_WEIGHTS, weight_memory},
+                            {DNNL_ARG_DST, dst_memory}});
     }
-    else {
-      net_args_.push_back({{DNNL_ARG_SRC, data_memory},
-                         {DNNL_ARG_WEIGHTS, weight_memory},
-                         {DNNL_ARG_DST, dst_memory}});
-    }
-    
   }
 
   void BatchNorm(const size_t& nid) {
@@ -608,107 +647,107 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     });
   }
 
-  void Matmul(const size_t& nid, const bool has_bias = false, const std::string act_type = "none",
-    const bool has_mul = false, const bool has_add = false) {
-    auto node = nodes_[nid];
+//   void Matmul(const size_t& nid, const bool has_bias = false, const std::string act_type = "none",
+//     const bool has_mul = false, const bool has_add = false) {
+//     auto node = nodes_[nid];
 
-    // Setup attributes.
-    auto data_entry = node.GetInputs()[0];
-    auto weight_entry = node.GetInputs()[1];
+//     // Setup attributes.
+//     auto data_entry = node.GetInputs()[0];
+//     auto weight_entry = node.GetInputs()[1];
 
-    dnnl::memory::dims input_shape = nodes_[data_entry.id_].GetOpShape()[data_entry.index_];
-    dnnl::memory::dims weight_shape = nodes_[weight_entry.id_].GetOpShape()[weight_entry.index_];
+//     dnnl::memory::dims input_shape = nodes_[data_entry.id_].GetOpShape()[data_entry.index_];
+//     dnnl::memory::dims weight_shape = nodes_[weight_entry.id_].GetOpShape()[weight_entry.index_];
 
-    dnnl::memory::dim M = input_shape[0],  // batch size
-        K = input_shape[1],               // input channels
-        N = weight_shape[1];              // output channels
+//     dnnl::memory::dim M = input_shape[0],  // batch size
+//         K = input_shape[1],               // input channels
+//         N = weight_shape[1];              // output channels
 
-    // Memory shapes.
-    dnnl::memory::dims data_dims = {M, K};
-    dnnl::memory::dims weight_dims = {K, N};
-    dnnl::memory::dims bias_dims = {M, N};
-    dnnl::memory::dims out_dims = {M, N};
+//     // Memory shapes.
+//     dnnl::memory::dims data_dims = {M, K};
+//     dnnl::memory::dims weight_dims = {K, N};
+//     dnnl::memory::dims bias_dims = {M, N};
+//     dnnl::memory::dims out_dims = {M, N};
 
-    // Memory descriptions.
-    auto data_md = dnnl::memory::desc({data_dims, dt::f32, tag::ab});
-    auto weight_md = dnnl::memory::desc({weight_dims, dt::f32, tag::ab});
-    auto bias_md = dnnl::memory::desc({bias_dims, dt::f32, tag::ab});
-    auto dst_md = dnnl::memory::desc({out_dims, dt::f32, tag::ab});
+//     // Memory descriptions.
+//     auto data_md = dnnl::memory::desc({data_dims, dt::f32, tag::ab});
+//     auto weight_md = dnnl::memory::desc({weight_dims, dt::f32, tag::ab});
+//     auto bias_md = dnnl::memory::desc({bias_dims, dt::f32, tag::ab});
+//     auto dst_md = dnnl::memory::desc({out_dims, dt::f32, tag::ab});
 
-    auto matmul_desc = has_bias?
-        dnnl::matmul::desc(data_md, weight_md, bias_md, dst_md):
-        dnnl::matmul::desc(data_md, weight_md, dst_md);
+//     auto matmul_desc = has_bias?
+//         dnnl::matmul::desc(data_md, weight_md, bias_md, dst_md):
+//         dnnl::matmul::desc(data_md, weight_md, dst_md);
     
-    dnnl::post_ops ops;
-    if (act_type == "relu") {
-      ops.append_eltwise(1.f, dnnl::algorithm::eltwise_relu, 0.f, 1.f);
-    }
-    if (act_type == "gelu") {
-      ops.append_eltwise(1.f, dnnl::algorithm::eltwise_gelu, 0.f, 1.f);
-    }
-    if (has_mul == true) {
-      ops.append_binary(dnnl::algorithm::binary_mul, dst_md);
-    }
-    if (has_add == true) {
-      ops.append_binary(dnnl::algorithm::binary_add, dst_md);
-    }
-    dnnl::primitive_attr attr;
-    attr.set_post_ops(ops);
+//     dnnl::post_ops ops;
+//     if (act_type == "relu") {
+//       ops.append_eltwise(1.f, dnnl::algorithm::eltwise_relu, 0.f, 1.f);
+//     }
+//     if (act_type == "gelu") {
+//       ops.append_eltwise(1.f, dnnl::algorithm::eltwise_gelu, 0.f, 1.f);
+//     }
+//     if (has_mul == true) {
+//       ops.append_binary(dnnl::algorithm::binary_mul, dst_md);
+//     }
+//     if (has_add == true) {
+//       ops.append_binary(dnnl::algorithm::binary_add, dst_md);
+//     }
+//     dnnl::primitive_attr attr;
+//     attr.set_post_ops(ops);
     
-    auto matmul_prim_desc = dnnl::matmul::primitive_desc(matmul_desc, attr, engine_);
-    auto matmul = dnnl::matmul(matmul_prim_desc);
-    net_.push_back(matmul);
+//     auto matmul_prim_desc = dnnl::matmul::primitive_desc(matmul_desc, attr, engine_);
+//     auto matmul = dnnl::matmul(matmul_prim_desc);
+//     net_.push_back(matmul);
 
-    // Memories.
-    auto data_memory = BindDNNLMemory(data_entry, data_md);
-    auto weight_memory = BindDNNLMemory(weight_entry, weight_md);
-    auto bias_memory = dnnl::memory(bias_md, engine_);
-    auto mul_memory = dnnl::memory(matmul_prim_desc.dst_desc(), engine_);
-    auto add_memory = dnnl::memory(matmul_prim_desc.dst_desc(), engine_);
-    auto dst_memory = dnnl::memory(matmul_prim_desc.dst_desc(), engine_);
-    JSONGraphNodeEntry out_entry(nid, 0);
-    if (has_bias) {
-      auto bias_entry = node.GetInputs()[2];
-      BindDNNLMemory(bias_entry, bias_memory);
-    } 
-    if (has_mul) {
-      auto mul_entry = node.GetInputs()[3];
-      dst_memory = BindDNNLMemory(mul_entry, mul_memory);
-    }
-    if (has_add) {
-      auto add_entry = node.GetInputs()[4];
-      dst_memory = BindDNNLMemory(add_entry, add_memory);
-    }
-    BindDNNLMemory(out_entry, dst_memory);
+//     // Memories.
+//     auto data_memory = BindDNNLMemory(data_entry, data_md);
+//     auto weight_memory = BindDNNLMemory(weight_entry, weight_md);
+//     auto bias_memory = dnnl::memory(bias_md, engine_);
+//     auto mul_memory = dnnl::memory(matmul_prim_desc.dst_desc(), engine_);
+//     auto add_memory = dnnl::memory(matmul_prim_desc.dst_desc(), engine_);
+//     auto dst_memory = dnnl::memory(matmul_prim_desc.dst_desc(), engine_);
+//     JSONGraphNodeEntry out_entry(nid, 0);
+//     if (has_bias) {
+//       auto bias_entry = node.GetInputs()[2];
+//       BindDNNLMemory(bias_entry, bias_memory);
+//     } 
+//     if (has_mul) {
+//       auto mul_entry = node.GetInputs()[3];
+//       dst_memory = BindDNNLMemory(mul_entry, mul_memory);
+//     }
+//     if (has_add) {
+//       auto add_entry = node.GetInputs()[4];
+//       dst_memory = BindDNNLMemory(add_entry, add_memory);
+//     }
+//     BindDNNLMemory(out_entry, dst_memory);
 
-    if (has_bias) {
-        if (has_mul) {
-            if (has_add) {
-                net_args_.push_back({{DNNL_ARG_SRC, data_memory},
-                                    {DNNL_ARG_WEIGHTS, weight_memory},
-                                    {DNNL_ARG_BIAS, bias_memory},
-                                    {DNNL_ARG_DST, dst_memory},
-                                    {DNNL_ARG_ATTR_MULTIPLE_POST_OP(0) | DNNL_ARG_SRC_1, mul_memory},
-                                    {DNNL_ARG_ATTR_MULTIPLE_POST_OP(1) | DNNL_ARG_SRC_1, dst_memory}});
-            } else {
-                net_args_.push_back({{DNNL_ARG_SRC, data_memory},
-                                    {DNNL_ARG_WEIGHTS, weight_memory},
-                                    {DNNL_ARG_BIAS, bias_memory},
-                                    {DNNL_ARG_DST, dst_memory},
-                                    {DNNL_ARG_ATTR_MULTIPLE_POST_OP(0) | DNNL_ARG_SRC_1, dst_memory}});
-            }
-        } else {
-            net_args_.push_back({{DNNL_ARG_SRC, data_memory},
-                                {DNNL_ARG_WEIGHTS, weight_memory},
-                                {DNNL_ARG_BIAS, bias_memory},
-                                {DNNL_ARG_DST, dst_memory}});
-        }
-        } else {
-        net_args_.push_back({{DNNL_ARG_SRC, data_memory},
-                            {DNNL_ARG_WEIGHTS, weight_memory},
-                            {DNNL_ARG_DST, dst_memory}});
-    }
-  }
+//     if (has_bias) {
+//         if (has_mul) {
+//             if (has_add) {
+//                 net_args_.push_back({{DNNL_ARG_SRC, data_memory},
+//                                     {DNNL_ARG_WEIGHTS, weight_memory},
+//                                     {DNNL_ARG_BIAS, bias_memory},
+//                                     {DNNL_ARG_DST, dst_memory},
+//                                     {DNNL_ARG_ATTR_MULTIPLE_POST_OP(0) | DNNL_ARG_SRC_1, mul_memory},
+//                                     {DNNL_ARG_ATTR_MULTIPLE_POST_OP(1) | DNNL_ARG_SRC_1, dst_memory}});
+//             } else {
+//                 net_args_.push_back({{DNNL_ARG_SRC, data_memory},
+//                                     {DNNL_ARG_WEIGHTS, weight_memory},
+//                                     {DNNL_ARG_BIAS, bias_memory},
+//                                     {DNNL_ARG_DST, dst_memory},
+//                                     {DNNL_ARG_ATTR_MULTIPLE_POST_OP(0) | DNNL_ARG_SRC_1, dst_memory}});
+//             }
+//         } else {
+//             net_args_.push_back({{DNNL_ARG_SRC, data_memory},
+//                                 {DNNL_ARG_WEIGHTS, weight_memory},
+//                                 {DNNL_ARG_BIAS, bias_memory},
+//                                 {DNNL_ARG_DST, dst_memory}});
+//         }
+//         } else {
+//         net_args_.push_back({{DNNL_ARG_SRC, data_memory},
+//                             {DNNL_ARG_WEIGHTS, weight_memory},
+//                             {DNNL_ARG_DST, dst_memory}});
+//     }
+//   }
 
   // Read from DNNL memory (+offset) and write to the handle.
   inline void read_from_dnnl_memory(void* handle, const dnnl::memory& mem, size_t size,
