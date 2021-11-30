@@ -234,6 +234,42 @@ std::string AutoQuery_matmul(int M, int K, int N) {//int *shapes, struct StructF
     return res;
 }
 
+std::string AutoQuery_innerproduct(int B, int IC, int OC) {//int *shapes, struct StructFormat* res
+    dnnl::engine eng(dnnl::engine::kind::cpu, 0);
+    dnnl::stream s(eng);
+    using tag = dnnl::memory::format_tag;
+    using dt = dnnl::memory::data_type;
+
+    // const dnnl::memory::dim batch = N;
+
+    dnnl::memory::dims dense1_src_tz = {B, IC};
+    dnnl::memory::dims dense1_weights_tz = {OC, IC};
+    dnnl::memory::dims dense1_bias_tz = {OC};
+    dnnl::memory::dims dense1_dst_tz = {B, OC};
+
+    auto dense1_src_md = dnnl::memory::desc({dense1_src_tz}, dt::f32, tag::any);
+    auto dense1_weights_md = dnnl::memory::desc({dense1_weights_tz}, dt::f32, tag::any);
+    auto dense1_bias_md = dnnl::memory::desc({dense1_bias_tz}, dt::f32, tag::any);
+    auto dense1_dst_md = dnnl::memory::desc({dense1_dst_tz}, dt::f32, tag::any);
+
+    auto dense1_d = dnnl::inner_product_forward::desc(dnnl::prop_kind::forward_inference,
+            dense1_src_md, dense1_weights_md, dense1_bias_md, dense1_dst_md);
+    auto dense1_pd = dnnl::inner_product_forward::primitive_desc(dense1_d, eng);
+
+    auto src_format = dense1_pd.src_desc();//.data;
+    auto weights_format = dense1_pd.weights_desc();//.data;
+    auto bias_format = dense1_pd.bias_desc();
+    auto dst_format = dense1_pd.dst_desc();//.data;
+    std::string src_df, weight_df, bias_df, dst_df;
+
+    src_df = md2fmt_tag_str(&src_format);
+    weight_df = md2fmt_tag_str(&weights_format);
+    bias_df = md2fmt_tag_str(&bias_format);
+    dst_df = md2fmt_tag_str(&dst_format);
+    std::string res = src_df + "," + weight_df + "," + bias_df + "," + dst_df;
+    return res;
+}
+
 TVM_REGISTER_GLOBAL("relay.ir.AutoQuery").set_body([](TVMArgs args, TVMRetValue* rv) {
   *rv = AutoQuery(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8], args[9], args[10], args[11], args[12]);
 });
@@ -242,6 +278,9 @@ TVM_REGISTER_GLOBAL("relay.ir.AutoQuery_matmul").set_body([](TVMArgs args, TVMRe
   *rv = AutoQuery_matmul(args[0], args[1], args[2]);
 });
 
+TVM_REGISTER_GLOBAL("relay.ir.AutoQuery_innerproduct").set_body([](TVMArgs args, TVMRetValue* rv) {
+  *rv = AutoQuery_innerproduct(args[0], args[1], args[2]);
+});
 }  // namespace contrib
 }  // namespace relay
 }  // namespace tvm

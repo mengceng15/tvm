@@ -44,27 +44,36 @@ model = BertModel.from_pretrained("bert-base-uncased", torchscript=True)
 
 # Creating the trace
 traced_model = torch.jit.trace(model, [tokens_tensor, segments_tensors])
+#torch.jit.save(traced_model, "/home/mengceng/traced_bert.pt")
 
 shape_list = [(i.debugName().split('.')[0], i.type().sizes()) for i in  list(traced_model.graph.inputs())[1:]]
 mod_bert, params_bert = tvm.relay.frontend.pytorch.from_pytorch(traced_model,
                         shape_list, default_dtype="float32")
 
-mod_bert = relay.transform.MergeComposite(pattern_table())(mod_bert)
-mod_bert = relay.transform.AnnotateTarget(["dnnl"])(mod_bert)
-mod_bert = relay.transform.MergeCompilerRegions()(mod_bert)
-mod_bert = relay.transform.PartitionGraph()(mod_bert)
+mod_bert = relay.transform.CanonicalizeOps()(mod_bert)
+mod_bert = relay.transform.InferType()(mod_bert)
+mod_bert = relay.transform.SimplifyInference()(mod_bert)
+mod_bert = relay.transform.FoldConstant()(mod_bert)
+mod_bert = relay.transform.FoldScaleAxis()(mod_bert)
+mod_bert = relay.transform.FoldConstant()(mod_bert)
+print(mod_bert)
 
-target_host = 'llvm'
-target = 'llvm'
-ctx = tvm.cpu()
+# mod_bert = relay.transform.MergeComposite(pattern_table())(mod_bert)
+# mod_bert = relay.transform.AnnotateTarget(["dnnl"])(mod_bert)
+# mod_bert = relay.transform.MergeCompilerRegions()(mod_bert)
+# mod_bert = relay.transform.PartitionGraph()(mod_bert)
 
-tt_a = tvm.nd.array(tokens_tensor.numpy(), ctx)
-st_a = tvm.nd.array(segments_tensors.numpy(), ctx)
-with tvm.transform.PassContext(opt_level=3):
-        graph, lib, params = tvm.relay.build(mod_bert,
-                                     target=target,
-                                     target_host=target_host,
-                                     params=params_bert)
+# target_host = 'llvm'
+# target = 'llvm'
+# ctx = tvm.cpu()
 
-module = tvm.contrib.graph_executor.create(graph, lib, ctx)
-module.run()
+# tt_a = tvm.nd.array(tokens_tensor.numpy(), ctx)
+# st_a = tvm.nd.array(segments_tensors.numpy(), ctx)
+# with tvm.transform.PassContext(opt_level=3):
+#         graph, lib, params = tvm.relay.build(mod_bert,
+#                                      target=target,
+#                                      target_host=target_host,
+#                                      params=params_bert)
+
+# module = tvm.contrib.graph_executor.create(graph, lib, ctx)
+# module.run()
