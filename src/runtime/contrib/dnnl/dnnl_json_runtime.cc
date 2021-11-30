@@ -339,7 +339,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
 
     // Memory descriptions.
     auto data_md = dnnl::memory::desc({data_dims, dt::f32, tag::nc});
-    auto weight_md = dnnl::memory::desc({weight_dims, dt::f32, tag::nc});
+    auto weight_md = dnnl::memory::desc({weight_dims, dt::f32, tag::any});
     auto bias_md = dnnl::memory::desc({bias_dims, dt::f32, tag::x});
     auto dst_md = dnnl::memory::desc({out_dims, dt::f32, tag::nc});
 
@@ -349,6 +349,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
                                                         weight_md, bias_md, dst_md) : \
         dnnl::inner_product_forward::desc(dnnl::prop_kind::forward_inference, data_md,
                                                         weight_md, dst_md);
+    // std::cout << "[LOG] description created " << std::endl;
 
     // Enable ReLU
         dnnl::post_ops ops;
@@ -368,18 +369,25 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     attr.set_post_ops(ops);
 
     auto dense_prim_desc = dnnl::inner_product_forward::primitive_desc(dense_desc, attr, engine_);
+    // std::cout << "[LOG] PD created " << std::endl;
+    
     auto dense = dnnl::inner_product_forward(dense_prim_desc);
     net_.push_back(dense);
 
+    // std::cout << "[LOG] primitive created " << std::endl;
+
     // Memories.
     auto data_memory = BindDNNLMemory(data_entry, data_md);
-    auto weight_memory = BindDNNLMemory(weight_entry, weight_md);
+    auto weight_memory = BindDNNLMemory(weight_entry, dense_prim_desc.weights_desc());
     auto bias_memory = dnnl::memory(bias_md, engine_);
     // std::cout << "dense_prim_desc.dst_desc().dims().size(): " << dense_prim_desc.dst_desc().dims().size() << std::endl;
     // std::cout << dense_prim_desc.dst_desc().dims()[0] << " " << dense_prim_desc.dst_desc().dims()[1] << std::endl;
     auto mul_memory = dnnl::memory(dense_prim_desc.dst_desc(), engine_);
     auto add_memory = dnnl::memory(dense_prim_desc.dst_desc(), engine_);
     auto dst_memory = dnnl::memory(dense_prim_desc.dst_desc(), engine_);
+
+    // std::cout << "[LOG] memory created" << std::endl;
+
     JSONGraphNodeEntry out_entry(nid, 0);
     if (has_bias) {
       auto bias_entry = node.GetInputs()[2];
