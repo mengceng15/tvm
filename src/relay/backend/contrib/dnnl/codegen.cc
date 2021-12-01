@@ -498,20 +498,20 @@ class DNNLJSONSerializer : public backend::contrib::JSONSerializer {
       } else if (name == "dnnl.conv2d_bias") {
         call = GetRootCall(fn->body.as<CallNode>(), 1, {"nn.conv2d", "add"});
         ICHECK(call->op.as<OpNode>()) << "Not op node";
-      } else if (name == "dnnl.dense_bias_relu") {
-        call = GetRootCall(fn->body.as<CallNode>(), 2, {"nn.dense", "add", "nn.relu"});
+      } else if (name == "dnnl.densepack_bias_relu") {
+        call = GetRootCall(fn->body.as<CallNode>(), 2, {"nn.contrib_dense_pack", "add", "nn.relu"});
         ICHECK(call->op.as<OpNode>()) << "Not op node";
-      } else if (name == "dnnl.dense_bias") {
-        call = GetRootCall(fn->body.as<CallNode>(), 1, {"nn.dense", "add"});
+      } else if (name == "dnnl.densepack_bias") {
+        call = GetRootCall(fn->body.as<CallNode>(), 1, {"nn.contrib_dense_pack", "add"});
         ICHECK(call->op.as<OpNode>()) << "Not op node";
-      } else if (name == "dnnl.dense_bias_gelu") {
-        call = FindCallWithName(fn->body.as<CallNode>(), 10, "nn.dense");
+      } else if (name == "dnnl.densepack_bias_gelu") {
+        call = FindCallWithName(fn->body.as<CallNode>(), 10, "nn.contrib_dense_pack");
         ICHECK(call->op.as<OpNode>()) << "Not op node";
-      } else if (name == "dnnl.dense_bias_mul") {
-        call = GetRootCall(fn->body.as<CallNode>(), 2, {"nn.dense", "add", "multiply"});
+      } else if (name == "dnnl.densepack_bias_mul") {
+        call = GetRootCall(fn->body.as<CallNode>(), 2, {"nn.contrib_dense_pack", "add", "multiply"});
         ICHECK(call->op.as<OpNode>()) << "Not op node";
-      } else if (name == "dnnl.dense_bias_mul_add") {
-        call = GetRootCall(fn->body.as<CallNode>(), 3, {"nn.dense", "add", "multiply", "add"});
+      } else if (name == "dnnl.densepack_bias_mul_add") {
+        call = GetRootCall(fn->body.as<CallNode>(), 3, {"nn.contrib_dense_pack", "add", "multiply", "add"});
         ICHECK(call->op.as<OpNode>()) << "Not op node";
       } else {
         LOG(FATAL) << "Unrecognized DNNL pattern: " << name;

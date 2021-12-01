@@ -97,6 +97,13 @@ def alter_dense(attrs, inputs, tinfos, out_type):
 
     return relay.nn.contrib_dense_pack(data, weight, **new_attrs)
 
+def dense_example():
+    x = relay.var("x", relay.TensorType((14, 768), "float32"))
+    y = relay.var("y", relay.TensorType((768, 768), "float32"))
+    matmul0 = nn.dense(x, y)
+
+    return relay.Function([x, y], matmul0)
+
 def dense_bias_example():
     x = relay.var("x", relay.TensorType((14, 768), "float32"))
     y = relay.var("y", relay.TensorType((768, 768), "float32"))
@@ -166,7 +173,6 @@ def check_correctness(func, batch_size=1, batches=10, warmup=2):
     f = func()
     mod = tvm.IRModule.from_expr(f)
     # print(mod['main'].astext(show_meta_data=False))
-    print(mod)
 
     mod = relay.transform.CanonicalizeOps()(mod)
     mod = relay.transform.InferType()(mod)
@@ -177,14 +183,12 @@ def check_correctness(func, batch_size=1, batches=10, warmup=2):
     mod = relay.transform.FoldConstant()(mod)
     with TempOpAttr("nn.dense", "FTVMAlterOpLayout", alter_dense):
         mod = relay.transform.AlterOpLayout()(mod)
-    print(mod)
     mod = relay.transform.FoldConstant()(mod)
 
     mod = relay.transform.MergeComposite(pattern_table())(mod)
     mod = relay.transform.AnnotateTarget(["dnnl"])(mod)
     mod = relay.transform.MergeCompilerRegions()(mod)
     mod = relay.transform.PartitionGraph()(mod)
-    print(mod)
     # print(mod['main'].astext(show_meta_data=False))
 
     json, lib, params = relay.build(mod, "llvm")
@@ -192,7 +196,8 @@ def check_correctness(func, batch_size=1, batches=10, warmup=2):
 
     datax = np.random.uniform(size=(14, 768)) - 0.5
     datay = np.random.uniform(size=(768, 768)) - 0.5
-    datab = np.random.uniform(size=(768,)) - 0.5
+    if func != dense_example:
+        datab = np.random.uniform(size=(768,)) - 0.5
     if func == dense_bias_mul_example or func == dense_bias_mul_add_example:
         datamul = np.random.uniform(size=(14, 768)) - 0.5
     if func == dense_bias_mul_add_example:
@@ -206,7 +211,8 @@ def check_correctness(func, batch_size=1, batches=10, warmup=2):
 
     rt_mod.set_input("x", tvm.nd.array(datax.astype("float32")))
     rt_mod.set_input("y", tvm.nd.array(datay.transpose().astype("float32")))
-    rt_mod.set_input("b", tvm.nd.array(datab.astype("float32")))
+    if func != dense_example:
+        rt_mod.set_input("b", tvm.nd.array(datab.astype("float32")))
     if func == dense_bias_mul_example or func == dense_bias_mul_add_example:
         rt_mod.set_input("data_mul", tvm.nd.array(datamul.astype("float32")))
     if func == dense_bias_mul_add_example:
@@ -218,23 +224,28 @@ def check_correctness(func, batch_size=1, batches=10, warmup=2):
     rt_mod.run()
     tvm_output = rt_mod.get_output(0).numpy()
 
+    if func == dense_example:
+        ans = np.matmul(datax, datay)
+        np.testing.assert_almost_equal(ans, tvm_output, decimal=5)
     if func == dense_bias_example:
         ans = np.matmul(datax, datay) + datab
-        np.testing.assert_almost_equal(ans, tvm_output)
+        np.testing.assert_almost_equal(ans, tvm_output, decimal=5)
     if func == dense_bias_relu_example:
         ans = np.maximum(np.matmul(datax, datay) + datab, 0)
-        np.testing.assert_almost_equal(ans, tvm_output)
+        np.testing.assert_almost_equal(ans, tvm_output, decimal=5)
     if func == dense_bias_mul_example:
         ans = (np.matmul(datax, datay) + datab) * datamul
-        np.testing.assert_almost_equal(ans, tvm_output)
+        np.testing.assert_almost_equal(ans, tvm_output, decimal=5)
     if func == dense_bias_mul_add_example:
         ans = (np.matmul(datax, datay) + datab) * datamul + dataadd
-        np.testing.assert_almost_equal(ans, tvm_output)
+        np.testing.assert_almost_equal(ans, tvm_output, decimal=5)
 
-    print(ans)
-    print(tvm_output)
+    # debug
+    # print(ans)
+    # print(tvm_output)
 
+check_correctness(dense_example)
 check_correctness(dense_bias_example)
-# check_correctness(dense_bias_relu_example)
-# check_correctness(dense_bias_mul_example)
-# check_correctness(dense_bias_mul_add_example)
+check_correctness(dense_bias_relu_example)
+check_correctness(dense_bias_mul_example)
+check_correctness(dense_bias_mul_add_example)
