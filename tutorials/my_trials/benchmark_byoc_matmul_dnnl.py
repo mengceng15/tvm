@@ -10,6 +10,8 @@ import math
 
 from tvm.relay.op.tensor import bitwise_and
 
+from tvm.relay.testing.temp_op_attr import TempOpAttr
+
 # from torch._C import T
 warnings.filterwarnings("ignore")
 # from mxnet.gluon.model_zoo.vision import *
@@ -52,6 +54,48 @@ def update_lib(lib):
     # Load the lib.so back to a runtime module.
     lib = tvm.runtime.load_module(lib_path)
     return lib
+
+weight_dic = {"a":"N",
+              "b":"C",}
+
+relay.op.register_alter_op_layout("nn.dense", level=114)
+def alter_dense(attrs, inputs, tinfos, out_type):
+    data, weight = inputs
+    def get_shape(tensor):
+        if 'Var' in str(type(tensor)):
+            return tensor.type_annotation.concrete_shape
+        elif 'Constant' in str(type(tensor)):
+            return tensor.data.shape
+        # elif 'TensorType' in str(type(tensor)):
+        else:
+            return tensor.concrete_shape
+
+    B, IC = get_shape(data)
+    OC, IC = get_shape(weight)
+    B, OC = get_shape(out_type)
+
+    res = relay.query_layout.AutoQuery_innerproduct(B, IC, OC)
+    print("queried layout:", res)
+    new_attrs = dict(attrs)
+
+    _, weight_df, _, _ = res.split(',')
+
+    def trans_data(input_data, is_weight=False):
+        dic = weight_dic
+        res = input_data
+                
+        for key, value in dic.items():
+            if key.upper() in input_data:
+                res = res.replace(key.upper(), value, 1)
+                res = res.replace(key, value.lower(), 1)
+            else:
+                res = res.replace(key, value, 1)
+        return res
+
+    print("translated layout:", trans_data(weight_df, is_weight=True))
+    new_attrs['weight_layout'] = trans_data(weight_df, is_weight=True)
+
+    return relay.nn.contrib_dense_pack(data, weight, **new_attrs)
 
 def dense_bias_example():
     x = relay.var("x", relay.TensorType((14, 768), "float32"))
@@ -124,20 +168,23 @@ def check_correctness(func, batch_size=1, batches=10, warmup=2):
     # print(mod['main'].astext(show_meta_data=False))
     print(mod)
 
-    desired_layouts = {'nn.dense': ['ab', 'AB16b16a']}
-
     mod = relay.transform.CanonicalizeOps()(mod)
     mod = relay.transform.InferType()(mod)
     mod = relay.transform.SimplifyInference()(mod)
     mod = relay.transform.FoldConstant()(mod)
     mod = relay.transform.FoldScaleAxis()(mod)
+    
+    mod = relay.transform.FoldConstant()(mod)
+    with TempOpAttr("nn.dense", "FTVMAlterOpLayout", alter_dense):
+        mod = relay.transform.AlterOpLayout()(mod)
     print(mod)
-    mod = relay.transform.ConvertLayout(desired_layouts)(mod)
-    print(mod)
+    mod = relay.transform.FoldConstant()(mod)
+
     mod = relay.transform.MergeComposite(pattern_table())(mod)
     mod = relay.transform.AnnotateTarget(["dnnl"])(mod)
     mod = relay.transform.MergeCompilerRegions()(mod)
     mod = relay.transform.PartitionGraph()(mod)
+    print(mod)
     # print(mod['main'].astext(show_meta_data=False))
 
     json, lib, params = relay.build(mod, "llvm")

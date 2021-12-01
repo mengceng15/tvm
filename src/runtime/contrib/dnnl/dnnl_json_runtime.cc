@@ -156,6 +156,8 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
           Dense(nid, true, "none", true);
         } else if ("dnnl.dense_bias_mul_add" == op_name) {
           Dense(nid, true, "none", true, true);
+        } /* debug */ else if ("nn.contrib_dense_pack" == op_name) {
+          Dense(nid, true);
         } else {
           LOG(FATAL) << "Unsupported op: " << op_name;
         }
@@ -320,6 +322,9 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
   void Dense(const size_t& nid, const bool has_bias = false, const std::string act_type = "none",
              const bool has_mul = false, const bool has_add = false) {
     auto node = nodes_[nid];
+
+    std::cout << "=======================weight_layout=============================" << std::endl;
+    std::cout << (node.GetAttr<std::vector<std::string>>("weight_layout")[0]) << std::endl;
 
     // Setup attributes.
     auto data_entry = node.GetInputs()[0];
