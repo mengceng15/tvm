@@ -75,7 +75,7 @@ def alter_dense(attrs, inputs, tinfos, out_type):
     B, OC = get_shape(out_type)
 
     res = relay.query_layout.AutoQuery_innerproduct(B, IC, OC)
-    print("queried layout:", res)
+    print("queried weight layout:", res)
     new_attrs = dict(attrs)
 
     _, weight_df, _, _ = res.split(',')
@@ -92,7 +92,7 @@ def alter_dense(attrs, inputs, tinfos, out_type):
                 res = res.replace(key, value, 1)
         return res
 
-    print("translated layout:", trans_data(weight_df, is_weight=True))
+    print("translated weight layout:", trans_data(weight_df, is_weight=True))
     new_attrs['weight_layout'] = trans_data(weight_df, is_weight=True)
 
     return relay.nn.contrib_dense_pack(data, weight, **new_attrs)
@@ -227,18 +227,23 @@ def check_correctness(func, batch_size=1, batches=10, warmup=2):
     if func == dense_example:
         ans = np.matmul(datax, datay)
         np.testing.assert_almost_equal(ans, tvm_output, decimal=5)
+        print("dense_example: passed\n")
     if func == dense_bias_example:
         ans = np.matmul(datax, datay) + datab
         np.testing.assert_almost_equal(ans, tvm_output, decimal=5)
+        print("dense_bias_example: passed\n")
     if func == dense_bias_relu_example:
         ans = np.maximum(np.matmul(datax, datay) + datab, 0)
         np.testing.assert_almost_equal(ans, tvm_output, decimal=5)
+        print("dense_bias_relu_example: passed\n")
     if func == dense_bias_mul_example:
         ans = (np.matmul(datax, datay) + datab) * datamul
         np.testing.assert_almost_equal(ans, tvm_output, decimal=5)
+        print("dense_bias_mul_example: passed\n")
     if func == dense_bias_mul_add_example:
         ans = (np.matmul(datax, datay) + datab) * datamul + dataadd
         np.testing.assert_almost_equal(ans, tvm_output, decimal=5)
+        print("dense_bias_mul_add_example: passed\n")
 
     # debug
     # print(ans)

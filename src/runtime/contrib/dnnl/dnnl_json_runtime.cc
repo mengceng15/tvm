@@ -92,18 +92,10 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     for (size_t i = 0; i < input_nodes_.size(); ++i) {
       auto eid = EntryID(input_nodes_[i], 0);  
       entry_out_mem_[eid].first.set_data_handle(data_entry_[eid]->data);
-    //   for (auto id = 0; id < 50; id++) {
-    //       std::cout << *(static_cast<float*>(data_entry_[eid]->data) + id) << " ";
-    //   }
-      std::cout << std::endl;
     }
     for (size_t i = 0; i < outputs_.size(); ++i) {
       auto eid = EntryID(outputs_[i]);
       entry_out_mem_[eid].first.set_data_handle(data_entry_[eid]->data);
-      // for (auto id = 0; id < 10; id++) {
-      //     std::cout << *(static_cast<float*>(data_entry_[eid]->data) + id) << " ";
-      // }
-      // std::cout << std::endl;
     }
     // Invoke the engine through intepreting the stream.
     for (size_t i = 0; i < net_.size(); ++i) {
@@ -368,7 +360,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     // std::cout << "[LOG] description created " << std::endl;
 
     // Enable ReLU
-        dnnl::post_ops ops;
+    dnnl::post_ops ops;
     if (act_type == "relu") {
       ops.append_eltwise(1.f, dnnl::algorithm::eltwise_relu, 0.f, 1.f);
     }
