@@ -25,6 +25,8 @@ import os
 from tvm.contrib import utils
 from tvm.relay import nn
 
+from tvm.topi.utils import get_const_tuple
+
 @tvm.instrument.pass_instrument
 class PrintIR:
     """Print the name of the pass, the IR, only before passes execute."""
@@ -58,21 +60,13 @@ def update_lib(lib):
 weight_dic = {"a":"N",
               "b":"C",}
 
-relay.op.register_alter_op_layout("nn.dense", level=114)
+@relay.op.register_alter_op_layout("nn.dense", level=114)
 def alter_dense(attrs, inputs, tinfos, out_type):
     data, weight = inputs
-    def get_shape(tensor):
-        if 'Var' in str(type(tensor)):
-            return tensor.type_annotation.concrete_shape
-        elif 'Constant' in str(type(tensor)):
-            return tensor.data.shape
-        # elif 'TensorType' in str(type(tensor)):
-        else:
-            return tensor.concrete_shape
+    data_tensor, weight_tensor = tinfos
 
-    B, IC = get_shape(data)
-    OC, IC = get_shape(weight)
-    B, OC = get_shape(out_type)
+    B, IC = get_const_tuple(data_tensor.shape)
+    OC, IC = get_const_tuple(weight_tensor.shape)
 
     res = relay.query_layout.AutoQuery_innerproduct(B, IC, OC)
     print("queried weight layout:", res)
@@ -191,19 +185,18 @@ def check_correctness(func, batch_size=1, batches=10, warmup=2):
     f = func()
     mod = tvm.IRModule.from_expr(f)
     # print(mod['main'].astext(show_meta_data=False))
-    # print(mod)
-    
+    print(mod)
+
     mod = relay.transform.CanonicalizeOps()(mod)
     mod = relay.transform.InferType()(mod)
     mod = relay.transform.SimplifyInference()(mod)
     mod = relay.transform.FoldConstant()(mod)
     mod = relay.transform.FoldScaleAxis()(mod)
-    
     mod = relay.transform.FoldConstant()(mod)
+    print(mod)
     with TempOpAttr("nn.dense", "FTVMAlterOpLayout", alter_dense):
         mod = relay.transform.AlterOpLayout()(mod)
     mod = relay.transform.FoldConstant()(mod)
-
     mod = relay.transform.MergeComposite(pattern_table())(mod)
     mod = relay.transform.AnnotateTarget(["dnnl"])(mod)
     mod = relay.transform.MergeCompilerRegions()(mod)

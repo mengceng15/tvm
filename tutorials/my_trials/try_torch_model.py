@@ -11,6 +11,10 @@ from transformers import BertModel, BertTokenizer, BertConfig
 import torch
 import numpy as np
 
+from tvm.relay.testing.temp_op_attr import TempOpAttr
+
+from tvm.topi.utils import get_const_tuple
+
 enc = BertTokenizer.from_pretrained("bert-base-uncased")
 
 # Tokenizing input text
@@ -50,18 +54,56 @@ shape_list = [(i.debugName().split('.')[0], i.type().sizes()) for i in  list(tra
 mod_bert, params_bert = tvm.relay.frontend.pytorch.from_pytorch(traced_model,
                         shape_list, default_dtype="float32")
 
+weight_dic = {"a":"N",
+              "b":"C",}
+
+@relay.op.register_alter_op_layout("nn.dense", level=114)
+def alter_dense(attrs, inputs, tinfos, out_type):
+    data, weight = inputs
+    data_tensor, weight_tensor = tinfos
+
+    B, IC = get_const_tuple(data_tensor.shape)
+    OC, IC = get_const_tuple(weight_tensor.shape)
+
+    res = relay.query_layout.AutoQuery_innerproduct(B, IC, OC)
+    print("queried weight layout:", res)
+    new_attrs = dict(attrs)
+
+    _, weight_df, _, _ = res.split(',')
+
+    def trans_data(input_data, is_weight=False):
+        dic = weight_dic
+        res = input_data
+                
+        for key, value in dic.items():
+            if key.upper() in input_data:
+                res = res.replace(key.upper(), value, 1)
+                res = res.replace(key, value.lower(), 1)
+            else:
+                res = res.replace(key, value, 1)
+        return res
+
+    print("translated weight layout:", trans_data(weight_df, is_weight=True))
+    new_attrs['weight_layout'] = trans_data(weight_df, is_weight=True)
+
+    return relay.nn.contrib_dense_pack(data, weight, **new_attrs)
+
 mod_bert = relay.transform.CanonicalizeOps()(mod_bert)
 mod_bert = relay.transform.InferType()(mod_bert)
 mod_bert = relay.transform.SimplifyInference()(mod_bert)
 mod_bert = relay.transform.FoldConstant()(mod_bert)
 mod_bert = relay.transform.FoldScaleAxis()(mod_bert)
 mod_bert = relay.transform.FoldConstant()(mod_bert)
-print(mod_bert)
+# print(mod_bert)
+with TempOpAttr("nn.dense", "FTVMAlterOpLayout", alter_dense):
+    mod_bert = relay.transform.AlterOpLayout()(mod_bert)
+mod_bert = relay.transform.FoldConstant()(mod_bert)
+mod_bert = relay.transform.MergeComposite(pattern_table())(mod_bert)
+mod_bert = relay.transform.AnnotateTarget(["dnnl"])(mod_bert)
+mod_bert = relay.transform.MergeCompilerRegions()(mod_bert)
+mod_bert = relay.transform.PartitionGraph()(mod_bert)
 
-# mod_bert = relay.transform.MergeComposite(pattern_table())(mod_bert)
-# mod_bert = relay.transform.AnnotateTarget(["dnnl"])(mod_bert)
-# mod_bert = relay.transform.MergeCompilerRegions()(mod_bert)
-# mod_bert = relay.transform.PartitionGraph()(mod_bert)
+print(mod_bert)
 
 # target_host = 'llvm'
 # target = 'llvm'
