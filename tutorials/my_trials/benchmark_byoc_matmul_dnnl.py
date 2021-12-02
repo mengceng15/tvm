@@ -124,25 +124,43 @@ def dense_bias_relu_example():
 
     return relay.Function([x, y, b], res)
 
+# def dense_bias_gelu_example():
+#     x = relay.var("x", relay.TensorType((14, 768), "float32"))
+#     y = relay.var("y", relay.TensorType((768, 768), "float32"))
+#     b = relay.var("b", relay.TensorType((768,), "float32"))
+#     matmul0 = nn.dense(x, y)
+#     bias = relay.add(matmul0, b)
+#     # gelu_tanh
+#     const1 = relay.const(0.044715)
+#     const2 = relay.const(math.sqrt(2 / math.pi))
+#     gelu = relay.power(bias, relay.const(3, dtype="float32"))
+#     gelu = relay.multiply(gelu, const1)
+#     gelu = relay.add(gelu, bias)
+#     gelu = relay.multiply(gelu, const2)
+#     gelu = relay.tanh(gelu)
+#     gelu = relay.add(gelu, relay.const(1, dtype="float32"))
+#     gelu = relay.multiply(gelu, relay.const(0.5))
+#     res = relay.multiply(gelu, bias)
+
+#     return relay.Function([x, y, b], res)
+
 def dense_bias_gelu_example():
     x = relay.var("x", relay.TensorType((14, 768), "float32"))
     y = relay.var("y", relay.TensorType((768, 768), "float32"))
     b = relay.var("b", relay.TensorType((768,), "float32"))
     matmul0 = nn.dense(x, y)
     bias = relay.add(matmul0, b)
-    # gelu
-    const1 = relay.const(0.044715)
-    const2 = relay.const(math.sqrt(2 / math.pi))
-    gelu = relay.power(bias, relay.const(3, dtype="float32"))
-    gelu = relay.multiply(gelu, const1)
-    gelu = relay.add(gelu, bias)
-    gelu = relay.multiply(gelu, const2)
-    gelu = relay.tanh(gelu)
-    gelu = relay.add(gelu, relay.const(1, dtype="float32"))
-    gelu = relay.multiply(gelu, relay.const(0.5))
-    res = relay.multiply(gelu, bias)
+    # gelu_erf
+    const1 = relay.const(1.41421)
+    const2 = relay.const(0.5)
+    const3 = relay.const(1.0)
+    div = relay.divide(bias, const1)
+    erf = relay.erf(div)
+    mul = relay.multiply(bias, const2)
+    add = relay.add(erf, const3)
+    mul2 = relay.multiply(mul, add)
 
-    return relay.Function([x, y, b], res)
+    return relay.Function([x, y, b], mul2)
 
 def dense_bias_mul_example():
     x = relay.var("x", relay.TensorType((14, 768), "float32"))
@@ -173,7 +191,8 @@ def check_correctness(func, batch_size=1, batches=10, warmup=2):
     f = func()
     mod = tvm.IRModule.from_expr(f)
     # print(mod['main'].astext(show_meta_data=False))
-
+    # print(mod)
+    
     mod = relay.transform.CanonicalizeOps()(mod)
     mod = relay.transform.InferType()(mod)
     mod = relay.transform.SimplifyInference()(mod)
@@ -190,6 +209,7 @@ def check_correctness(func, batch_size=1, batches=10, warmup=2):
     mod = relay.transform.MergeCompilerRegions()(mod)
     mod = relay.transform.PartitionGraph()(mod)
     # print(mod['main'].astext(show_meta_data=False))
+    # print(mod)
 
     json, lib, params = relay.build(mod, "llvm")
     rt_mod = tvm.contrib.graph_executor.create(json, lib, ctx)#Create a runtime executor module given a graph and module.
@@ -236,6 +256,15 @@ def check_correctness(func, batch_size=1, batches=10, warmup=2):
         ans = np.maximum(np.matmul(datax, datay) + datab, 0)
         np.testing.assert_almost_equal(ans, tvm_output, decimal=5)
         print("dense_bias_relu_example: passed\n")
+    if func == dense_bias_gelu_example:
+        ans0 = np.matmul(datax, datay) + datab
+        ans1 = ans0 / 1.41421
+        ans1 = np.array([math.erf(x) for x in ans1.flatten().tolist()]).reshape(ans1.shape)
+        ans2 = 0.5 * ans0
+        ans1 = ans1 + 1.0
+        ans = ans1 * ans2
+        np.testing.assert_almost_equal(ans, tvm_output, decimal=5)
+        print("dense_bias_gelu_example: passed\n")
     if func == dense_bias_mul_example:
         ans = (np.matmul(datax, datay) + datab) * datamul
         np.testing.assert_almost_equal(ans, tvm_output, decimal=5)
@@ -252,5 +281,6 @@ def check_correctness(func, batch_size=1, batches=10, warmup=2):
 check_correctness(dense_example)
 check_correctness(dense_bias_example)
 check_correctness(dense_bias_relu_example)
+check_correctness(dense_bias_gelu_example)
 check_correctness(dense_bias_mul_example)
 check_correctness(dense_bias_mul_add_example)

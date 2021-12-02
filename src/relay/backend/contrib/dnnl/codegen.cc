@@ -505,7 +505,7 @@ class DNNLJSONSerializer : public backend::contrib::JSONSerializer {
         call = GetRootCall(fn->body.as<CallNode>(), 1, {"nn.contrib_dense_pack", "add"});
         ICHECK(call->op.as<OpNode>()) << "Not op node";
       } else if (name == "dnnl.densepack_bias_gelu") {
-        call = FindCallWithName(fn->body.as<CallNode>(), 10, "nn.contrib_dense_pack");
+        call = FindCallWithName(fn->body.as<CallNode>(), 7, "nn.contrib_dense_pack");
         ICHECK(call->op.as<OpNode>()) << "Not op node";
       } else if (name == "dnnl.densepack_bias_mul") {
         call = GetRootCall(fn->body.as<CallNode>(), 2, {"nn.contrib_dense_pack", "add", "multiply"});

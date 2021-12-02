@@ -365,7 +365,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       ops.append_eltwise(1.f, dnnl::algorithm::eltwise_relu, 0.f, 1.f);
     }
     if (act_type == "gelu") {
-      ops.append_eltwise(1.f, dnnl::algorithm::eltwise_gelu, 0.f, 1.f);
+      ops.append_eltwise(1.f, dnnl::algorithm::eltwise_gelu_erf, 0.f, 1.f);
     }
     if (has_mul == true) {
       ops.append_binary(dnnl::algorithm::binary_mul, dst_md);

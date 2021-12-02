@@ -124,23 +124,39 @@ def make_densepack_pattern(with_bias=True, with_relu=False):
         densepack_out = is_op("nn.relu")(densepack_out)
     return densepack_out
 
+# def make_densepack_bias_gelu_pattern():
+#     data = wildcard()
+#     weight = wildcard()
+#     bias = wildcard()
+#     densepack = is_op("nn.contrib_dense_pack")(data, weight)
+#     densepack_out = is_op("add")(densepack, bias)
+#     const1 = is_expr(const(0.044715))
+#     const2 = is_expr(const(math.sqrt(2 / math.pi)))
+#     gelu = is_op("power")(densepack_out, is_expr(const(3, dtype="float32")))
+#     gelu = is_op("multiply")(gelu, const1)
+#     gelu = is_op("add")(gelu, densepack_out)
+#     gelu = is_op("multiply")(gelu, const2)
+#     gelu = is_op("tanh")(gelu)
+#     gelu = is_op("add")(gelu, is_expr(const(1, dtype="float32")))
+#     gelu = is_op("multiply")(gelu, is_expr(const(0.5)))
+#     densepack_out = is_op("multiply")(gelu, densepack_out)
+#     return densepack_out
+
 def make_densepack_bias_gelu_pattern():
     data = wildcard()
     weight = wildcard()
     bias = wildcard()
     densepack = is_op("nn.contrib_dense_pack")(data, weight)
     densepack_out = is_op("add")(densepack, bias)
-    const1 = is_expr(const(0.044715))
-    const2 = is_expr(const(math.sqrt(2 / math.pi)))
-    gelu = is_op("power")(densepack_out, is_expr(const(3, dtype="float32")))
-    gelu = is_op("multiply")(gelu, const1)
-    gelu = is_op("add")(gelu, densepack_out)
-    gelu = is_op("multiply")(gelu, const2)
-    gelu = is_op("tanh")(gelu)
-    gelu = is_op("add")(gelu, is_expr(const(1, dtype="float32")))
-    gelu = is_op("multiply")(gelu, is_expr(const(0.5)))
-    densepack_out = is_op("multiply")(gelu, densepack_out)
-    return densepack_out
+    const1 = is_expr(const(1.41421))
+    const2 = is_expr(const(0.5))
+    const3 = is_expr(const(1.0))
+    div = is_op("divide")(densepack_out, const1)
+    erf = is_op("erf")(div)
+    mul = is_op("multiply")(densepack_out, const2)
+    add = is_op("add")(erf, const3)
+    mul2 = is_op("multiply")(mul, add)
+    return mul2
 
 def make_densepack_bias_mul_pattern():
     data1 = wildcard()
