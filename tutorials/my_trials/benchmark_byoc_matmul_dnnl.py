@@ -60,36 +60,36 @@ class PrintIR:
 weight_dic = {"a":"N",
               "b":"C",}
 
-@relay.op.register_alter_op_layout("nn.dense", level=114)
-def alter_dense(attrs, inputs, tinfos, out_type):
-    data, weight = inputs
-    data_tensor, weight_tensor = tinfos
+# @relay.op.register_alter_op_layout("nn.dense", level=114)
+# def alter_dense(attrs, inputs, tinfos, out_type):
+#     data, weight = inputs
+#     data_tensor, weight_tensor = tinfos
 
-    B, IC = get_const_tuple(data_tensor.shape)
-    OC, IC = get_const_tuple(weight_tensor.shape)
+#     B, IC = get_const_tuple(data_tensor.shape)
+#     OC, IC = get_const_tuple(weight_tensor.shape)
 
-    res = relay.query_layout.AutoQuery_innerproduct(B, IC, OC)
-    print("queried weight layout:", res)
-    new_attrs = dict(attrs)
+#     res = relay.query_layout.AutoQuery_innerproduct(B, IC, OC)
+#     print("queried weight layout:", res)
+#     new_attrs = dict(attrs)
 
-    _, weight_df, _, _ = res.split(',')
+#     _, weight_df, _, _ = res.split(',')
 
-    def trans_data(input_data, is_weight=False):
-        dic = weight_dic
-        res = input_data
+#     def trans_data(input_data, is_weight=False):
+#         dic = weight_dic
+#         res = input_data
                 
-        for key, value in dic.items():
-            if key.upper() in input_data:
-                res = res.replace(key.upper(), value, 1)
-                res = res.replace(key, value.lower(), 1)
-            else:
-                res = res.replace(key, value, 1)
-        return res
+#         for key, value in dic.items():
+#             if key.upper() in input_data:
+#                 res = res.replace(key.upper(), value, 1)
+#                 res = res.replace(key, value.lower(), 1)
+#             else:
+#                 res = res.replace(key, value, 1)
+#         return res
 
-    print("translated weight layout:", trans_data(weight_df, is_weight=True))
-    new_attrs['weight_layout'] = trans_data(weight_df, is_weight=True)
+#     print("translated weight layout:", trans_data(weight_df, is_weight=True))
+#     new_attrs['weight_layout'] = trans_data(weight_df, is_weight=True)
 
-    return relay.nn.contrib_dense_pack(data, weight, **new_attrs)
+#     return relay.nn.contrib_dense_pack(data, weight, **new_attrs)
 
 @relay.op.register_alter_op_layout("nn.special_dense", level=114)
 def alter_special_dense(attrs, inputs, tinfos, out_type):
@@ -124,26 +124,26 @@ def alter_special_dense(attrs, inputs, tinfos, out_type):
     return relay.nn.special_dense(data, weight, **new_attrs)
 
 def dense_example():
-    x = relay.var("x", relay.TensorType((14, 768), "float32"))
+    x = relay.var("x", relay.TensorType((1, 14, 768), "float32"))
     y = relay.var("y", relay.TensorType((768, 768), "float32"))
-    matmul0 = nn.dense(x, y)
+    matmul0 = nn.special_dense(x, y)
 
     return relay.Function([x, y], matmul0)
 
 def dense_bias_example():
-    x = relay.var("x", relay.TensorType((14, 768), "float32"))
+    x = relay.var("x", relay.TensorType((1, 14, 768), "float32"))
     y = relay.var("y", relay.TensorType((768, 768), "float32"))
     b = relay.var("b", relay.TensorType((768,), "float32"))
-    matmul0 = nn.dense(x, y)
+    matmul0 = nn.special_dense(x, y)
     bias = relay.add(matmul0, b)
 
     return relay.Function([x, y, b], bias)
 
 def dense_bias_relu_example():
-    x = relay.var("x", relay.TensorType((14, 768), "float32"))
+    x = relay.var("x", relay.TensorType((1, 14, 768), "float32"))
     y = relay.var("y", relay.TensorType((768, 768), "float32"))
     b = relay.var("b", relay.TensorType((768,), "float32"))
-    matmul0 = nn.dense(x, y)
+    matmul0 = nn.special_dense(x, y)
     bias = relay.add(matmul0, b)
     # relu
     res = nn.relu(bias)
@@ -171,10 +171,10 @@ def dense_bias_relu_example():
 #     return relay.Function([x, y, b], res)
 
 def dense_bias_gelu_example():
-    x = relay.var("x", relay.TensorType((14, 768), "float32"))
+    x = relay.var("x", relay.TensorType((1, 14, 768), "float32"))
     y = relay.var("y", relay.TensorType((768, 768), "float32"))
     b = relay.var("b", relay.TensorType((768,), "float32"))
-    matmul0 = nn.dense(x, y)
+    matmul0 = nn.special_dense(x, y)
     bias = relay.add(matmul0, b)
     # gelu_erf
     const1 = relay.const(1.41421)
@@ -189,23 +189,23 @@ def dense_bias_gelu_example():
     return relay.Function([x, y, b], mul2)
 
 def dense_bias_mul_example():
-    x = relay.var("x", relay.TensorType((14, 768), "float32"))
+    x = relay.var("x", relay.TensorType((1, 14, 768), "float32"))
     y = relay.var("y", relay.TensorType((768, 768), "float32"))
     b = relay.var("b", relay.TensorType((768,), "float32"))
     data_mul = relay.var("data_mul", relay.TensorType((14, 768), "float32"))
-    matmul0 = nn.dense(x, y)
+    matmul0 = nn.special_dense(x, y)
     bias = relay.add(matmul0, b)
     mul = relay.multiply(bias, data_mul)
 
     return relay.Function([x, y, b, data_mul], mul)
 
 def dense_bias_mul_add_example():
-    x = relay.var("x", relay.TensorType((14, 768), "float32"))
+    x = relay.var("x", relay.TensorType((1, 14, 768), "float32"))
     y = relay.var("y", relay.TensorType((768, 768), "float32"))
     b = relay.var("b", relay.TensorType((768,), "float32"))
     data_mul = relay.var("data_mul", relay.TensorType((14, 768), "float32"))
     data_add = relay.var("data_add", relay.TensorType((14, 768), "float32"))
-    matmul0 = nn.dense(x, y)
+    matmul0 = nn.special_dense(x, y)
     bias = relay.add(matmul0, b)
     mul = relay.multiply(bias, data_mul)
     add = relay.add(mul, data_add)
@@ -226,7 +226,7 @@ def check_correctness(func, batch_size=1, batches=10, warmup=2):
     mod = relay.transform.FoldScaleAxis()(mod)
     mod = relay.transform.FoldConstant()(mod)
     print(mod)
-    with TempOpAttr("nn.dense", "FTVMAlterOpLayout", alter_dense):
+    with TempOpAttr("nn.special_dense", "FTVMAlterOpLayout", alter_special_dense):
         mod = relay.transform.AlterOpLayout()(mod)
     print(mod)
     mod = relay.transform.FoldConstant()(mod)
@@ -240,7 +240,7 @@ def check_correctness(func, batch_size=1, batches=10, warmup=2):
     json, lib, params = relay.build(mod, "llvm")
     rt_mod = tvm.contrib.graph_executor.create(json, lib, ctx)#Create a runtime executor module given a graph and module.
 
-    datax = np.random.uniform(size=(14, 768)) - 0.5
+    datax = np.random.uniform(size=(1, 14, 768)) - 0.5
     datay = np.random.uniform(size=(768, 768)) - 0.5
     if func != dense_example:
         datab = np.random.uniform(size=(768,)) - 0.5
@@ -271,32 +271,33 @@ def check_correctness(func, batch_size=1, batches=10, warmup=2):
     tvm_output = rt_mod.get_output(0).numpy()
 
     if func == dense_example:
-        ans = np.matmul(datax, datay)
+        ans = np.matmul(datax.reshape((14, 768)), datay).reshape(1, 14, 768)
         np.testing.assert_almost_equal(ans, tvm_output, decimal=5)
         print("dense_example: passed\n")
     if func == dense_bias_example:
-        ans = np.matmul(datax, datay) + datab
+        ans = (np.matmul(datax.reshape((14, 768)), datay) + datab).reshape(1, 14, 768)
         np.testing.assert_almost_equal(ans, tvm_output, decimal=5)
         print("dense_bias_example: passed\n")
     if func == dense_bias_relu_example:
-        ans = np.maximum(np.matmul(datax, datay) + datab, 0)
+        ans = np.maximum(np.matmul(datax.reshape((14, 768)), datay) + datab, 0).reshape(1, 14, 768)
         np.testing.assert_almost_equal(ans, tvm_output, decimal=5)
         print("dense_bias_relu_example: passed\n")
     if func == dense_bias_gelu_example:
-        ans0 = np.matmul(datax, datay) + datab
+        ans0 = np.matmul(datax.reshape((14, 768)), datay) + datab
         ans1 = ans0 / 1.41421
         ans1 = np.array([math.erf(x) for x in ans1.flatten().tolist()]).reshape(ans1.shape)
         ans2 = 0.5 * ans0
         ans1 = ans1 + 1.0
         ans = ans1 * ans2
+        ans = ans.reshape(1, 14, 768)
         np.testing.assert_almost_equal(ans, tvm_output, decimal=5)
         print("dense_bias_gelu_example: passed\n")
     if func == dense_bias_mul_example:
-        ans = (np.matmul(datax, datay) + datab) * datamul
+        ans = ((np.matmul(datax.reshape((14, 768)), datay) + datab) * datamul).reshape(1, 14, 768)
         np.testing.assert_almost_equal(ans, tvm_output, decimal=5)
         print("dense_bias_mul_example: passed\n")
     if func == dense_bias_mul_add_example:
-        ans = (np.matmul(datax, datay) + datab) * datamul + dataadd
+        ans = ((np.matmul(datax.reshape((14, 768)), datay) + datab) * datamul + dataadd).reshape(1, 14, 768)
         np.testing.assert_almost_equal(ans, tvm_output, decimal=5)
         print("dense_bias_mul_add_example: passed\n")
 

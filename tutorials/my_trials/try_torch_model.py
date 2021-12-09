@@ -57,36 +57,36 @@ mod_bert, params_bert = tvm.relay.frontend.pytorch.from_pytorch(traced_model,
 weight_dic = {"a":"N",
               "b":"C",}
 
-@relay.op.register_alter_op_layout("nn.dense", level=114)
-def alter_dense(attrs, inputs, tinfos, out_type):
-    data, weight = inputs
-    data_tensor, weight_tensor = tinfos
+# @relay.op.register_alter_op_layout("nn.dense", level=114)
+# def alter_dense(attrs, inputs, tinfos, out_type):
+#     data, weight = inputs
+#     data_tensor, weight_tensor = tinfos
 
-    B, IC = get_const_tuple(data_tensor.shape)
-    OC, IC = get_const_tuple(weight_tensor.shape)
+#     B, IC = get_const_tuple(data_tensor.shape)
+#     OC, IC = get_const_tuple(weight_tensor.shape)
 
-    res = relay.query_layout.AutoQuery_innerproduct(B, IC, OC)
-    print("queried weight layout:", res)
-    new_attrs = dict(attrs)
+#     res = relay.query_layout.AutoQuery_innerproduct(B, IC, OC)
+#     print("queried weight layout:", res)
+#     new_attrs = dict(attrs)
 
-    _, weight_df, _, _ = res.split(',')
+#     _, weight_df, _, _ = res.split(',')
 
-    def trans_data(input_data, is_weight=False):
-        dic = weight_dic
-        res = input_data
+#     def trans_data(input_data, is_weight=False):
+#         dic = weight_dic
+#         res = input_data
                 
-        for key, value in dic.items():
-            if key.upper() in input_data:
-                res = res.replace(key.upper(), value, 1)
-                res = res.replace(key, value.lower(), 1)
-            else:
-                res = res.replace(key, value, 1)
-        return res
+#         for key, value in dic.items():
+#             if key.upper() in input_data:
+#                 res = res.replace(key.upper(), value, 1)
+#                 res = res.replace(key, value.lower(), 1)
+#             else:
+#                 res = res.replace(key, value, 1)
+#         return res
 
-    print("translated weight layout:", trans_data(weight_df, is_weight=True))
-    new_attrs['weight_layout'] = trans_data(weight_df, is_weight=True)
+#     print("translated weight layout:", trans_data(weight_df, is_weight=True))
+#     new_attrs['weight_layout'] = trans_data(weight_df, is_weight=True)
 
-    return relay.nn.contrib_dense_pack(data, weight, **new_attrs)
+#     return relay.nn.contrib_dense_pack(data, weight, **new_attrs)
 
 @relay.op.register_alter_op_layout("nn.special_dense", level=114)
 def alter_special_dense(attrs, inputs, tinfos, out_type):
@@ -127,9 +127,9 @@ mod_bert = relay.transform.SimplifyInference()(mod_bert)
 mod_bert = relay.transform.FoldConstant()(mod_bert)
 mod_bert = relay.transform.FoldScaleAxis()(mod_bert)
 mod_bert = relay.transform.FoldConstant()(mod_bert)
-print(mod_bert)
 with TempOpAttr("nn.special_dense", "FTVMAlterOpLayout", alter_special_dense):
     mod_bert = relay.transform.AlterOpLayout()(mod_bert)
+# print(mod_bert)
 mod_bert = relay.transform.FoldConstant()(mod_bert)
 mod_bert = relay.transform.MergeComposite(pattern_table())(mod_bert)
 mod_bert = relay.transform.AnnotateTarget(["dnnl"])(mod_bert)

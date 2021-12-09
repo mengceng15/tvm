@@ -142,19 +142,17 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
           Pooling(nid, dnnl::algorithm::pooling_max);
         } else if ("nn.avg_pool2d" == op_name) {
           Pooling(nid, dnnl::algorithm::pooling_avg);
-        } else if ("dnnl.densepack_bias_gelu" == op_name) {
+        } else if ("dnnl.special_dense_bias_gelu" == op_name) {
           DensePack(nid, true, "gelu");
-        } else if ("dnnl.densepack_bias_relu" == op_name) {
+        } else if ("dnnl.special_dense_bias_relu" == op_name) {
           DensePack(nid, true, "relu");
-        } else if ("dnnl.densepack_bias_mul" == op_name) {
+        } else if ("dnnl.special_dense_bias_mul" == op_name) {
           DensePack(nid, true, "none", true);
-        } else if ("dnnl.densepack_bias_mul_add" == op_name) {
+        } else if ("dnnl.special_dense_bias_mul_add" == op_name) {
           DensePack(nid, true, "none", true, true);
-        } else if ("dnnl.densepack_bias" == op_name) {
+        } else if ("dnnl.special_dense_bias" == op_name) {
           DensePack(nid, true, "none");
-        } else if ("nn.contrib_dense_pack" == op_name) {
-          DensePack(nid);
-        } else if ("nn.special_dense") {
+        } else if ("nn.special_dense" == op_name) {
           DensePack(nid);
         } else {
           LOG(FATAL) << "Unsupported op: " << op_name;

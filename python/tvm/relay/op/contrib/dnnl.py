@@ -72,7 +72,7 @@ _register_external_op_helper("concatenate")
 _register_external_op_helper("nn.max_pool2d")
 _register_external_op_helper("nn.avg_pool2d")
 # _register_external_op_helper("nn.matmul")
-_register_external_op_helper("nn.contrib_dense_pack")
+# _register_external_op_helper("nn.contrib_dense_pack")
 _register_external_op_helper("nn.special_dense")
 
 def make_pattern(with_bias=True, with_relu=True):
@@ -106,17 +106,17 @@ def make_conv_add_sum_relu_pattern():
     weight = wildcard()
     bias = wildcard()
     data2 = wildcard()
-    out = is_op("nn.contrib_dense_pack")(data1, weight)
+    out = is_op("nn.conv2d")(data1, weight)
     out = is_op("add")(out, bias)
     out = is_op("add")(out, data2)
     out = is_op("nn.relu")(out)
     return out
 
-def make_densepack_pattern(with_bias=True, with_relu=False):
+def make_special_dense_pattern(with_bias=True, with_relu=False):
     data = wildcard()
     weight = wildcard()
     bias = wildcard()
-    densepack = is_op("nn.contrib_dense_pack")(data, weight)
+    densepack = is_op("nn.special_dense")(data, weight)
     if with_bias:
         densepack_out = is_op("add")(densepack, bias)
     else:
@@ -125,29 +125,31 @@ def make_densepack_pattern(with_bias=True, with_relu=False):
         densepack_out = is_op("nn.relu")(densepack_out)
     return densepack_out
 
-# def make_densepack_bias_gelu_pattern():
-#     data = wildcard()
-#     weight = wildcard()
-#     bias = wildcard()
-#     densepack = is_op("nn.contrib_dense_pack")(data, weight)
-#     densepack_out = is_op("add")(densepack, bias)
-#     const1 = is_expr(const(0.044715))
-#     const2 = is_expr(const(math.sqrt(2 / math.pi)))
-#     gelu = is_op("power")(densepack_out, is_expr(const(3, dtype="float32")))
-#     gelu = is_op("multiply")(gelu, const1)
-#     gelu = is_op("add")(gelu, densepack_out)
-#     gelu = is_op("multiply")(gelu, const2)
-#     gelu = is_op("tanh")(gelu)
-#     gelu = is_op("add")(gelu, is_expr(const(1, dtype="float32")))
-#     gelu = is_op("multiply")(gelu, is_expr(const(0.5)))
-#     densepack_out = is_op("multiply")(gelu, densepack_out)
-#     return densepack_out
-
+"""
 def make_densepack_bias_gelu_pattern():
     data = wildcard()
     weight = wildcard()
     bias = wildcard()
     densepack = is_op("nn.contrib_dense_pack")(data, weight)
+    densepack_out = is_op("add")(densepack, bias)
+    const1 = is_expr(const(0.044715))
+    const2 = is_expr(const(math.sqrt(2 / math.pi)))
+    gelu = is_op("power")(densepack_out, is_expr(const(3, dtype="float32")))
+    gelu = is_op("multiply")(gelu, const1)
+    gelu = is_op("add")(gelu, densepack_out)
+    gelu = is_op("multiply")(gelu, const2)
+    gelu = is_op("tanh")(gelu)
+    gelu = is_op("add")(gelu, is_expr(const(1, dtype="float32")))
+    gelu = is_op("multiply")(gelu, is_expr(const(0.5)))
+    densepack_out = is_op("multiply")(gelu, densepack_out)
+    return densepack_out
+"""
+
+def make_special_dense_bias_gelu_pattern():
+    data = wildcard()
+    weight = wildcard()
+    bias = wildcard()
+    densepack = is_op("nn.special_dense")(data, weight)
     densepack_out = is_op("add")(densepack, bias)
     const1 = is_expr(const(1.41421))
     const2 = is_expr(const(0.5))
@@ -159,23 +161,23 @@ def make_densepack_bias_gelu_pattern():
     mul2 = is_op("multiply")(mul, add)
     return mul2
 
-def make_densepack_bias_mul_pattern():
+def make_special_dense_bias_mul_pattern():
     data1 = wildcard()
     weight = wildcard()
     bias = wildcard()
     data2 = wildcard()
-    densepack = is_op("nn.contrib_dense_pack")(data1, weight)
+    densepack = is_op("nn.special_dense")(data1, weight)
     bias = is_op("add")(densepack, bias)
     out = is_op("multiply")(bias, data2)
     return out
 
-def make_densepack_bias_mul_add_pattern():
+def make_special_dense_bias_mul_add_pattern():
     data1 = wildcard()
     weight = wildcard()
     bias = wildcard()
     data2 = wildcard()
     data3 = wildcard()
-    densepack = is_op("nn.contrib_dense_pack")(data1, weight)
+    densepack = is_op("nn.special_dense")(data1, weight)
     bias = is_op("add")(densepack, bias)
     mul = is_op("multiply")(bias, data2)
     out = is_op("add")(mul, data3)
@@ -189,13 +191,13 @@ def pattern_table():
     # dense_bias_relu_pat = ("dnnl.dense_bias_relu", make_dense_pattern(with_bias=True, with_relu=True))
     # dense_bias_pat = ("dnnl.dense_bias", make_dense_pattern(with_bias=True))
 
-    densepack_bias_relu_pat = ("dnnl.densepack_bias_relu", make_densepack_pattern(with_bias=True, with_relu=True))
-    densepack_bias_pat = ("dnnl.densepack_bias", make_densepack_pattern(with_bias=True))
-    densepack_bias_gelu_pat = ("dnnl.densepack_bias_gelu", make_densepack_bias_gelu_pattern())
-    densepack_bias_mul_pat = ("dnnl.densepack_bias_mul", make_densepack_bias_mul_pattern())
-    densepack_bias_mul_add_pat = ("dnnl.densepack_bias_mul_add", make_densepack_bias_mul_add_pattern())
+    special_dense_bias_relu_pat = ("dnnl.special_dense_bias_relu", make_special_dense_pattern(with_bias=True, with_relu=True))
+    special_dense_bias_pat = ("dnnl.special_dense_bias", make_special_dense_pattern(with_bias=True))
+    special_dense_bias_gelu_pat = ("dnnl.special_dense_bias_gelu", make_special_dense_bias_gelu_pattern())
+    special_dense_bias_mul_pat = ("dnnl.special_dense_bias_mul", make_special_dense_bias_mul_pattern())
+    special_dense_bias_mul_add_pat = ("dnnl.special_dense_bias_mul_add", make_special_dense_bias_mul_add_pattern())
     dnnl_patterns = [conv2d_bias_sum_relu_pat, conv2d_bias_relu_pat, conv2d_bias_pat,
     #  dense_bias_relu_pat, dense_bias_pat,
-     densepack_bias_gelu_pat, densepack_bias_mul_add_pat, densepack_bias_relu_pat, densepack_bias_mul_pat, densepack_bias_pat] #conv2d_relu_pat, 
+     special_dense_bias_gelu_pat, special_dense_bias_mul_add_pat, special_dense_bias_relu_pat, special_dense_bias_mul_pat, special_dense_bias_pat] #conv2d_relu_pat, 
     return dnnl_patterns
     
