@@ -353,7 +353,7 @@ InferCorrectLayoutOutput SpecialDenseInferCorrectLayout(const Attrs& attrs,
                                                      const Array<tvm::relay::Type>& old_in_types) {
   auto params = attrs.as<SpecialDenseAttrs>();
   ICHECK(params);
-  return InferCorrectLayoutOutput({"NC", params->weight_layout}, {"NC"}, attrs);
+  return InferCorrectLayoutOutput({"NCW", params->weight_layout}, {"NCW"}, attrs);
 }
 
 RELAY_REGISTER_OP("nn.special_dense")
