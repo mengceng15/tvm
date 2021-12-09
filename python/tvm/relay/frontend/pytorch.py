@@ -1608,6 +1608,13 @@ class PyTorchOpConverter:
         a_shape = self.infer_shape_with_prelude(inputs_0)
         b_shape = self.infer_shape_with_prelude(inputs_1)
 
+        # debug
+        if len(a_shape) == 3 and len(b_shape) == 2:
+            input_1 = _op.transpose(inputs_1, axes=(1, 0))
+            out = _op.nn.special_dense(inputs_0, input_1)
+            return out
+        # debug
+
         # When performing a batch matmul, we need to properly handle N-dim shapes.
         if len(a_shape) > 2 and len(b_shape) > 2:
             # Convert a into a 3 dimensional tensors.

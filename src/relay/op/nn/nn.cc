@@ -304,6 +304,75 @@ RELAY_REGISTER_OP("nn.contrib_dense_pack")
     .add_type_rel("DensePack", DensePackRel);
 // ------------------- relay.nn.contrib_dense_pack
 
+// ------------------- relay.nn.special_dense
+TVM_REGISTER_NODE_TYPE(SpecialDenseAttrs);
+
+// Positional relay function to create special_dense operator used by frontend FFI.
+Expr MakeSpecialDense(Expr data, Expr weight, tvm::String weight_layout, IndexExpr units,
+                   DataType out_dtype) {
+  auto attrs = make_object<SpecialDenseAttrs>();
+  attrs->units = units;
+  attrs->out_dtype = out_dtype;
+  attrs->weight_layout = std::move(weight_layout);
+  static const Op& op = Op::Get("nn.special_dense");
+  return Call(op, {data, weight}, Attrs(attrs), {});
+}
+
+TVM_REGISTER_GLOBAL("relay.op.nn._make.special_dense").set_body_typed(MakeSpecialDense);
+
+bool SpecialDenseRel(const Array<Type>& types, int num_inputs, const Attrs& attrs,
+                  const TypeReporter& reporter) {
+  ICHECK_EQ(types.size(), 3);
+  const auto* data = types[0].as<TensorTypeNode>();
+  const auto* weight = types[1].as<TensorTypeNode>();
+  if (data == nullptr || weight == nullptr) return false;
+
+  const SpecialDenseAttrs* param = attrs.as<SpecialDenseAttrs>();
+  ICHECK(param != nullptr);
+
+  ICHECK_EQ(data->shape.size(), 3) << "Only 2D data is supported";
+
+  Array<tvm::PrimExpr> oshape = data->shape;
+//   ICHECK_EQ(weight->shape.size(), 4) << "Weight is not packed 4D";
+  auto oc = weight->shape.size() == 2 ? weight->shape[0] :
+   weight->shape[0] * weight->shape[3];
+  oshape.Set(2, oc);
+
+  DataType out_dtype = param->out_dtype;
+  if (out_dtype.bits() == 0) {
+    out_dtype = data->dtype;
+  }
+  // assign output type
+  reporter->Assign(types[2], TensorType(oshape, out_dtype));
+  return true;
+}
+
+InferCorrectLayoutOutput SpecialDenseInferCorrectLayout(const Attrs& attrs,
+                                                     const Array<Layout>& new_in_layouts,
+                                                     const Array<Layout>& old_in_layouts,
+                                                     const Array<tvm::relay::Type>& old_in_types) {
+  auto params = attrs.as<SpecialDenseAttrs>();
+  ICHECK(params);
+  return InferCorrectLayoutOutput({"NC", params->weight_layout}, {"NC"}, attrs);
+}
+
+RELAY_REGISTER_OP("nn.special_dense")
+    .describe(R"code(Applies a linear transformation: :math:`Y = XW^T`.
+
+- **data**: `(batch, input_dim)`
+- **weight**: `(units // pack_weight_tile, input_dim, pack_weight_tile)`
+- **out**: `(batch, units)`.
+
+)code" TVM_ADD_FILELINE)
+    .set_attrs_type<SpecialDenseAttrs>()
+    .set_num_inputs(2)
+    .add_argument("data", "3D Tensor", "Input data.")
+    .add_argument("weight", "4D Tensor", "Packed weight matrix.")
+    .set_support_level(10)
+    .set_attr<FInferCorrectLayout>("FInferCorrectLayout", SpecialDenseInferCorrectLayout)
+    .add_type_rel("SpecialDense", SpecialDenseRel);
+// ------------------- relay.nn.special_dense
+
 // relay.leaky_relu
 TVM_REGISTER_NODE_TYPE(LeakyReluAttrs);
 

@@ -35,27 +35,27 @@ class PrintIR:
         print("Running pass: {}", info)
         print(mod)
 
-def update_lib(lib):
-    # Include the path of src/runtime/contrib/dnnl/dnnl.cc
-    test_dir = os.path.dirname(os.path.realpath(os.path.expanduser(__file__)))
-    # source_dir = os.path.join(test_dir, "..", "..", "..")
-    # contrib_path = os.path.join(source_dir, "src", "runtime", "contrib")
-    source_dir = os.path.join(test_dir, "..", "tvm")
-    contrib_path = os.path.join(source_dir, "src", "runtime", "contrib")
+# def update_lib(lib):
+#     # Include the path of src/runtime/contrib/dnnl/dnnl.cc
+#     test_dir = os.path.dirname(os.path.realpath(os.path.expanduser(__file__)))
+#     # source_dir = os.path.join(test_dir, "..", "..", "..")
+#     # contrib_path = os.path.join(source_dir, "src", "runtime", "contrib")
+#     source_dir = os.path.join(test_dir, "..", "tvm")
+#     contrib_path = os.path.join(source_dir, "src", "runtime", "contrib")
 
-    # Setup the gcc flag to compile DNNL code.
-    kwargs = {}
-    kwargs["options"] = ["-O2", "-std=c++14", "-I" + contrib_path]
-    tmp_path = utils.tempdir()
-    lib_name = 'lib.so'
-    lib_path = tmp_path.relpath(lib_name)
+#     # Setup the gcc flag to compile DNNL code.
+#     kwargs = {}
+#     kwargs["options"] = ["-O2", "-std=c++14", "-I" + contrib_path]
+#     tmp_path = utils.tempdir()
+#     lib_name = 'lib.so'
+#     lib_path = tmp_path.relpath(lib_name)
 
-    # The generated C code with DNNL APIs is compiled to a binary lib.so.
-    lib.export_library(lib_path, fcompile=False, **kwargs)
+#     # The generated C code with DNNL APIs is compiled to a binary lib.so.
+#     lib.export_library(lib_path, fcompile=False, **kwargs)
 
-    # Load the lib.so back to a runtime module.
-    lib = tvm.runtime.load_module(lib_path)
-    return lib
+#     # Load the lib.so back to a runtime module.
+#     lib = tvm.runtime.load_module(lib_path)
+#     return lib
 
 weight_dic = {"a":"N",
               "b":"C",}
@@ -90,6 +90,38 @@ def alter_dense(attrs, inputs, tinfos, out_type):
     new_attrs['weight_layout'] = trans_data(weight_df, is_weight=True)
 
     return relay.nn.contrib_dense_pack(data, weight, **new_attrs)
+
+@relay.op.register_alter_op_layout("nn.special_dense", level=114)
+def alter_special_dense(attrs, inputs, tinfos, out_type):
+    data, weight = inputs
+    data_tensor, weight_tensor = tinfos
+
+    B, M, IC = get_const_tuple(data_tensor.shape)
+    OC, IC = get_const_tuple(weight_tensor.shape)
+    B = B * M
+
+    res = relay.query_layout.AutoQuery_innerproduct(B, IC, OC)
+    print("queried weight layout:", res)
+    new_attrs = dict(attrs)
+
+    _, weight_df, _, _ = res.split(',')
+
+    def trans_data(input_data, is_weight=False):
+        dic = weight_dic
+        res = input_data
+                
+        for key, value in dic.items():
+            if key.upper() in input_data:
+                res = res.replace(key.upper(), value, 1)
+                res = res.replace(key, value.lower(), 1)
+            else:
+                res = res.replace(key, value, 1)
+        return res
+
+    print("translated weight layout:", trans_data(weight_df, is_weight=True))
+    new_attrs['weight_layout'] = trans_data(weight_df, is_weight=True)
+
+    return relay.nn.special_dense(data, weight, **new_attrs)
 
 def dense_example():
     x = relay.var("x", relay.TensorType((14, 768), "float32"))
@@ -196,6 +228,7 @@ def check_correctness(func, batch_size=1, batches=10, warmup=2):
     print(mod)
     with TempOpAttr("nn.dense", "FTVMAlterOpLayout", alter_dense):
         mod = relay.transform.AlterOpLayout()(mod)
+    print(mod)
     mod = relay.transform.FoldConstant()(mod)
     mod = relay.transform.MergeComposite(pattern_table())(mod)
     mod = relay.transform.AnnotateTarget(["dnnl"])(mod)
@@ -271,6 +304,56 @@ def check_correctness(func, batch_size=1, batches=10, warmup=2):
     # print(ans)
     # print(tvm_output)
 
+def do_test():
+    ctx = tvm.cpu()
+    
+    x = relay.var("x", relay.TensorType((1, 14, 768), "float32"))
+    y = relay.var("y", relay.TensorType((16, 768), "float32"))
+    matmul0 = nn.special_dense(x, y)
+    f = relay.Function([x, y], matmul0)
+
+    mod = tvm.IRModule.from_expr(f)
+    # print(mod['main'].astext(show_meta_data=False))
+    print(mod)
+
+    mod = relay.transform.CanonicalizeOps()(mod)
+    mod = relay.transform.InferType()(mod)
+    mod = relay.transform.SimplifyInference()(mod)
+    mod = relay.transform.FoldConstant()(mod)
+    mod = relay.transform.FoldScaleAxis()(mod)
+    mod = relay.transform.FoldConstant()(mod)
+    print(mod)
+    with TempOpAttr("nn.special_dense", "FTVMAlterOpLayout", alter_special_dense):
+        mod = relay.transform.AlterOpLayout()(mod)
+    mod = relay.transform.FoldConstant()(mod)
+    mod = relay.transform.MergeComposite(pattern_table())(mod)
+    mod = relay.transform.AnnotateTarget(["dnnl"])(mod)
+    mod = relay.transform.MergeCompilerRegions()(mod)
+    mod = relay.transform.PartitionGraph()(mod)
+    # print(mod['main'].astext(show_meta_data=False))
+    print(mod)
+
+    json, lib, params = relay.build(mod, "llvm")
+    rt_mod = tvm.contrib.graph_executor.create(json, lib, ctx)#Create a runtime executor module given a graph and module.
+
+    datax = np.random.uniform(size=(1, 14, 768)) - 0.5
+    datay = np.random.uniform(size=(768, 16)) - 0.5
+
+    # DEBUG
+    print(datax)
+    print(datay)
+
+    rt_mod.set_input("x", tvm.nd.array(datax.astype("float32")))
+    rt_mod.set_input("y", tvm.nd.array(datay.transpose().astype("float32")))
+    rt_mod.run()
+    tvm_output = rt_mod.get_output(0).numpy()
+    # print(tvm_output)
+
+    ans = np.matmul(datax.reshape((14, 768)), datay).reshape(1, 14, 16)
+    np.testing.assert_almost_equal(ans, tvm_output, decimal=5)
+    print("do_test: passed\n")
+
+do_test()
 check_correctness(dense_example)
 check_correctness(dense_bias_example)
 check_correctness(dense_bias_relu_example)

@@ -1100,6 +1100,25 @@ struct DensePackAttrs : public tvm::AttrsNode<DensePackAttrs> {
   }
 };
 
+/*! \brief Attributes for special_dense operator */
+struct SpecialDenseAttrs : public tvm::AttrsNode<SpecialDenseAttrs> {
+  IndexExpr units;
+  DataType out_dtype;
+  tvm::String weight_layout;
+
+  TVM_DECLARE_ATTRS(SpecialDenseAttrs, "relay.attrs.SpecialDenseAttrs") {
+    TVM_ATTR_FIELD(units).describe("Number of hidden units of the dense transformation.");
+
+    // use 0 bits to indicate none.
+    TVM_ATTR_FIELD(out_dtype)
+        .set_default(NullValue<DataType>())
+        .describe("Output data type, set to explicit type under mixed precision setting");
+    TVM_ATTR_FIELD(weight_layout)
+        .set_default("NC")
+        .describe("Dimension ordering of weight. Packed layouts, such as NC8n, are possible.");
+  }
+};
+
 /*! \brief Attributes for batch matmul operator. */
 struct BatchMatmulAttrs : public tvm::AttrsNode<BatchMatmulAttrs> {
   DataType out_dtype;

@@ -154,6 +154,8 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
           DensePack(nid, true, "none");
         } else if ("nn.contrib_dense_pack" == op_name) {
           DensePack(nid);
+        } else if ("nn.special_dense") {
+          DensePack(nid);
         } else {
           LOG(FATAL) << "Unsupported op: " << op_name;
         }
@@ -332,6 +334,11 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     dnnl::memory::dim B = input_shape[0],  // batch size
         IC = input_shape[1],               // input channels
         OC = weight_shape[0];              // output channels
+
+    if (input_shape.size() == 3) {
+        B = input_shape[0] * input_shape[1];
+        IC = input_shape[2];
+    }
 
     auto layout = node.GetAttr<std::vector<std::string>>("weight_layout")[0];
     if ("NC16c64n" == layout || "NC16c32n" == layout || "NC16c16n" == layout) {

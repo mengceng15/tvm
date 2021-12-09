@@ -73,6 +73,7 @@ _register_external_op_helper("nn.max_pool2d")
 _register_external_op_helper("nn.avg_pool2d")
 # _register_external_op_helper("nn.matmul")
 _register_external_op_helper("nn.contrib_dense_pack")
+_register_external_op_helper("nn.special_dense")
 
 def make_pattern(with_bias=True, with_relu=True):
     data = wildcard()
