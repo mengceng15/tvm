@@ -151,7 +151,7 @@ def make_special_dense_bias_gelu_pattern():
     bias = wildcard()
     densepack = is_op("nn.special_dense")(data, weight)
     densepack_out = is_op("add")(densepack, bias)
-    const1 = is_expr(const(1.41421))
+    const1 = is_expr(const(math.sqrt(2)))
     const2 = is_expr(const(0.5))
     const3 = is_expr(const(1.0))
     div = is_op("divide")(densepack_out, const1)

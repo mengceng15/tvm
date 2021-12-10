@@ -135,7 +135,6 @@ mod_bert = relay.transform.MergeComposite(pattern_table())(mod_bert)
 mod_bert = relay.transform.AnnotateTarget(["dnnl"])(mod_bert)
 mod_bert = relay.transform.MergeCompilerRegions()(mod_bert)
 mod_bert = relay.transform.PartitionGraph()(mod_bert)
-
 print(mod_bert)
 
 # target_host = 'llvm'
