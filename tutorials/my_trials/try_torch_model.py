@@ -137,17 +137,19 @@ mod_bert = relay.transform.MergeCompilerRegions()(mod_bert)
 mod_bert = relay.transform.PartitionGraph()(mod_bert)
 print(mod_bert)
 
-# target_host = 'llvm'
-# target = 'llvm'
-# ctx = tvm.cpu()
+target_host = 'llvm'
+target = 'llvm'
+ctx = tvm.cpu()
 
-# tt_a = tvm.nd.array(tokens_tensor.numpy(), ctx)
-# st_a = tvm.nd.array(segments_tensors.numpy(), ctx)
-# with tvm.transform.PassContext(opt_level=3):
-#         graph, lib, params = tvm.relay.build(mod_bert,
-#                                      target=target,
-#                                      target_host=target_host,
-#                                      params=params_bert)
+tt_a = tvm.nd.array(tokens_tensor.numpy(), ctx) #attention_mask
+st_a = tvm.nd.array(segments_tensors.numpy(), ctx) #input_ids
+with tvm.transform.PassContext(opt_level=3):
+        graph, lib, params = tvm.relay.build(mod_bert,
+                                     target=target,
+                                     target_host=target_host,
+                                     params=params_bert)
 
-# module = tvm.contrib.graph_executor.create(graph, lib, ctx)
-# module.run()
+module = tvm.contrib.graph_executor.create(graph, lib, ctx)
+module.set_input("attention_mask", tvm.nd.array(tt_a))
+module.set_input("input_ids", tvm.nd.array(st_a))
+module.run()
