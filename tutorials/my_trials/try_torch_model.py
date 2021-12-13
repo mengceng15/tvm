@@ -88,8 +88,8 @@ weight_dic = {"a":"N",
 
 #     return relay.nn.contrib_dense_pack(data, weight, **new_attrs)
 
-@relay.op.register_alter_op_layout("nn.special_dense", level=114)
-def alter_special_dense(attrs, inputs, tinfos, out_type):
+@relay.op.register_alter_op_layout("nn.special_matmul", level=114)
+def alter_special_matmul(attrs, inputs, tinfos, out_type):
     data, weight = inputs
     data_tensor, weight_tensor = tinfos
 
@@ -118,7 +118,7 @@ def alter_special_dense(attrs, inputs, tinfos, out_type):
     print("translated weight layout:", trans_data(weight_df, is_weight=True))
     new_attrs['weight_layout'] = trans_data(weight_df, is_weight=True)
 
-    return relay.nn.special_dense(data, weight, **new_attrs)
+    return relay.nn.special_matmul(data, weight, **new_attrs)
 
 # print(mod_bert)
 mod_bert = relay.transform.CanonicalizeOps()(mod_bert)
@@ -127,7 +127,7 @@ mod_bert = relay.transform.SimplifyInference()(mod_bert)
 mod_bert = relay.transform.FoldConstant()(mod_bert)
 mod_bert = relay.transform.FoldScaleAxis()(mod_bert)
 mod_bert = relay.transform.FoldConstant()(mod_bert)
-with TempOpAttr("nn.special_dense", "FTVMAlterOpLayout", alter_special_dense):
+with TempOpAttr("nn.special_matmul", "FTVMAlterOpLayout", alter_special_matmul):
     mod_bert = relay.transform.AlterOpLayout()(mod_bert)
 # print(mod_bert)
 mod_bert = relay.transform.FoldConstant()(mod_bert)

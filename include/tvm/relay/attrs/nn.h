@@ -1100,13 +1100,13 @@ struct DensePackAttrs : public tvm::AttrsNode<DensePackAttrs> {
   }
 };
 
-/*! \brief Attributes for special_dense operator */
-struct SpecialDenseAttrs : public tvm::AttrsNode<SpecialDenseAttrs> {
+/*! \brief Attributes for special_matmul operator */
+struct SpecialMatmulAttrs : public tvm::AttrsNode<SpecialMatmulAttrs> {
   IndexExpr units;
   DataType out_dtype;
   tvm::String weight_layout;
 
-  TVM_DECLARE_ATTRS(SpecialDenseAttrs, "relay.attrs.SpecialDenseAttrs") {
+  TVM_DECLARE_ATTRS(SpecialMatmulAttrs, "relay.attrs.SpecialMatmulAttrs") {
     TVM_ATTR_FIELD(units).describe("Number of hidden units of the dense transformation.");
 
     // use 0 bits to indicate none.

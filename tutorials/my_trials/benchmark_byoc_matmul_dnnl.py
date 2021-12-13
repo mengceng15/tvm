@@ -66,8 +66,8 @@ weight_dic = {"a":"N",
 
 #     return relay.nn.contrib_dense_pack(data, weight, **new_attrs)
 
-@relay.op.register_alter_op_layout("nn.special_dense", level=114)
-def alter_special_dense(attrs, inputs, tinfos, out_type):
+@relay.op.register_alter_op_layout("nn.special_matmul", level=114)
+def alter_special_matmul(attrs, inputs, tinfos, out_type):
     data, weight = inputs
     data_tensor, weight_tensor = tinfos
 
@@ -96,12 +96,12 @@ def alter_special_dense(attrs, inputs, tinfos, out_type):
     print("translated weight layout:", trans_data(weight_df, is_weight=True))
     new_attrs['weight_layout'] = trans_data(weight_df, is_weight=True)
 
-    return relay.nn.special_dense(data, weight, **new_attrs)
+    return relay.nn.special_matmul(data, weight, **new_attrs)
 
 def dense_example():
     x = relay.var("x", relay.TensorType((2, 14, 768), "float32"))
     y = relay.var("y", relay.TensorType((16, 768), "float32"))
-    matmul0 = nn.special_dense(x, y)
+    matmul0 = nn.special_matmul(x, y)
 
     return relay.Function([x, y], matmul0)
 
@@ -109,7 +109,7 @@ def dense_bias_example():
     x = relay.var("x", relay.TensorType((2, 14, 768), "float32"))
     y = relay.var("y", relay.TensorType((16, 768), "float32"))
     b = relay.var("b", relay.TensorType((16,), "float32"))
-    matmul0 = nn.special_dense(x, y)
+    matmul0 = nn.special_matmul(x, y)
     bias = relay.add(matmul0, b)
 
     return relay.Function([x, y, b], bias)
@@ -118,7 +118,7 @@ def dense_bias_relu_example():
     x = relay.var("x", relay.TensorType((2, 14, 768), "float32"))
     y = relay.var("y", relay.TensorType((16, 768), "float32"))
     b = relay.var("b", relay.TensorType((16,), "float32"))
-    matmul0 = nn.special_dense(x, y)
+    matmul0 = nn.special_matmul(x, y)
     bias = relay.add(matmul0, b)
     # relu
     res = nn.relu(bias)
@@ -129,7 +129,7 @@ def dense_bias_gelu_example():
     x = relay.var("x", relay.TensorType((2, 14, 768), "float32"))
     y = relay.var("y", relay.TensorType((16, 768), "float32"))
     b = relay.var("b", relay.TensorType((16,), "float32"))
-    matmul0 = nn.special_dense(x, y)
+    matmul0 = nn.special_matmul(x, y)
     bias = relay.add(matmul0, b)
     # gelu_erf
     const1 = relay.const(1.41421)
@@ -148,7 +148,7 @@ def dense_bias_mul_example():
     y = relay.var("y", relay.TensorType((16, 768), "float32"))
     b = relay.var("b", relay.TensorType((16,), "float32"))
     data_mul = relay.var("data_mul", relay.TensorType((2, 14, 16), "float32"))
-    matmul0 = nn.special_dense(x, y)
+    matmul0 = nn.special_matmul(x, y)
     bias = relay.add(matmul0, b)
     mul = relay.multiply(bias, data_mul)
 
@@ -160,7 +160,7 @@ def dense_bias_mul_add_example():
     b = relay.var("b", relay.TensorType((16,), "float32"))
     data_mul = relay.var("data_mul", relay.TensorType((2, 14, 16), "float32"))
     data_add = relay.var("data_add", relay.TensorType((2, 14, 16), "float32"))
-    matmul0 = nn.special_dense(x, y)
+    matmul0 = nn.special_matmul(x, y)
     bias = relay.add(matmul0, b)
     mul = relay.multiply(bias, data_mul)
     add = relay.add(mul, data_add)
@@ -179,7 +179,7 @@ def check_correctness(func, batch_size=1, batches=10, warmup=2):
     mod = relay.transform.FoldConstant()(mod)
     mod = relay.transform.FoldScaleAxis()(mod)
     mod = relay.transform.FoldConstant()(mod)
-    with TempOpAttr("nn.special_dense", "FTVMAlterOpLayout", alter_special_dense):
+    with TempOpAttr("nn.special_matmul", "FTVMAlterOpLayout", alter_special_matmul):
         mod = relay.transform.AlterOpLayout()(mod)
     mod = relay.transform.FoldConstant()(mod)
     mod = relay.transform.MergeComposite(pattern_table())(mod)

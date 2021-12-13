@@ -498,20 +498,20 @@ class DNNLJSONSerializer : public backend::contrib::JSONSerializer {
       } else if (name == "dnnl.conv2d_bias") {
         call = GetRootCall(fn->body.as<CallNode>(), 1, {"nn.conv2d", "add"});
         ICHECK(call->op.as<OpNode>()) << "Not op node";
-      } else if (name == "dnnl.special_dense_bias_relu") {
-        call = GetRootCall(fn->body.as<CallNode>(), 2, {"nn.special_dense", "add", "nn.relu"});
+      } else if (name == "dnnl.special_matmul_bias_relu") {
+        call = GetRootCall(fn->body.as<CallNode>(), 2, {"nn.special_matmul", "add", "nn.relu"});
         ICHECK(call->op.as<OpNode>()) << "Not op node";
-      } else if (name == "dnnl.special_dense_bias") {
-        call = GetRootCall(fn->body.as<CallNode>(), 1, {"nn.special_dense", "add"});
+      } else if (name == "dnnl.special_matmul_bias") {
+        call = GetRootCall(fn->body.as<CallNode>(), 1, {"nn.special_matmul", "add"});
         ICHECK(call->op.as<OpNode>()) << "Not op node";
-      } else if (name == "dnnl.special_dense_bias_gelu") {
-        call = FindCallWithName(fn->body.as<CallNode>(), 7, "nn.special_dense");
+      } else if (name == "dnnl.special_matmul_bias_gelu") {
+        call = FindCallWithName(fn->body.as<CallNode>(), 7, "nn.special_matmul");
         ICHECK(call->op.as<OpNode>()) << "Not op node";
-      } else if (name == "dnnl.special_dense_bias_mul") {
-        call = GetRootCall(fn->body.as<CallNode>(), 2, {"nn.special_dense", "add", "multiply"});
+      } else if (name == "dnnl.special_matmul_bias_mul") {
+        call = GetRootCall(fn->body.as<CallNode>(), 2, {"nn.special_matmul", "add", "multiply"});
         ICHECK(call->op.as<OpNode>()) << "Not op node";
-      } else if (name == "dnnl.special_dense_bias_mul_add") {
-        call = GetRootCall(fn->body.as<CallNode>(), 3, {"nn.special_dense", "add", "multiply", "add"});
+      } else if (name == "dnnl.special_matmul_bias_mul_add") {
+        call = GetRootCall(fn->body.as<CallNode>(), 3, {"nn.special_matmul", "add", "multiply", "add"});
         ICHECK(call->op.as<OpNode>()) << "Not op node";
       } else {
         LOG(FATAL) << "Unrecognized DNNL pattern: " << name;

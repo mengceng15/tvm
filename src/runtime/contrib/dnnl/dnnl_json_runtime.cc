@@ -142,18 +142,18 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
           Pooling(nid, dnnl::algorithm::pooling_max);
         } else if ("nn.avg_pool2d" == op_name) {
           Pooling(nid, dnnl::algorithm::pooling_avg);
-        } else if ("dnnl.special_dense_bias_gelu" == op_name) {
-          DensePack(nid, true, "gelu");
-        } else if ("dnnl.special_dense_bias_relu" == op_name) {
-          DensePack(nid, true, "relu");
-        } else if ("dnnl.special_dense_bias_mul" == op_name) {
-          DensePack(nid, true, "none", true);
-        } else if ("dnnl.special_dense_bias_mul_add" == op_name) {
-          DensePack(nid, true, "none", true, true);
-        } else if ("dnnl.special_dense_bias" == op_name) {
-          DensePack(nid, true, "none");
-        } else if ("nn.special_dense" == op_name) {
-          DensePack(nid);
+        } else if ("dnnl.special_matmul_bias_gelu" == op_name) {
+          SpecialMatmul(nid, true, "gelu");
+        } else if ("dnnl.special_matmul_bias_relu" == op_name) {
+          SpecialMatmul(nid, true, "relu");
+        } else if ("dnnl.special_matmul_bias_mul" == op_name) {
+          SpecialMatmul(nid, true, "none", true);
+        } else if ("dnnl.special_matmul_bias_mul_add" == op_name) {
+          SpecialMatmul(nid, true, "none", true, true);
+        } else if ("dnnl.special_matmul_bias" == op_name) {
+          SpecialMatmul(nid, true, "none");
+        } else if ("nn.special_matmul" == op_name) {
+          SpecialMatmul(nid);
         } else {
           LOG(FATAL) << "Unsupported op: " << op_name;
         }
@@ -315,7 +315,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     
   }
 
-  void DensePack(const size_t& nid, const bool has_bias = false, const std::string act_type = "none",
+  void SpecialMatmul(const size_t& nid, const bool has_bias = false, const std::string act_type = "none",
              const bool has_mul = false, const bool has_add = false) {
     auto node = nodes_[nid];
 
