@@ -1105,6 +1105,7 @@ struct SpecialMatmulAttrs : public tvm::AttrsNode<SpecialMatmulAttrs> {
   IndexExpr units;
   DataType out_dtype;
   tvm::String weight_layout;
+  bool is_batch_matmul;
 
   TVM_DECLARE_ATTRS(SpecialMatmulAttrs, "relay.attrs.SpecialMatmulAttrs") {
     TVM_ATTR_FIELD(units).describe("Number of hidden units of the dense transformation.");
@@ -1116,6 +1117,9 @@ struct SpecialMatmulAttrs : public tvm::AttrsNode<SpecialMatmulAttrs> {
     TVM_ATTR_FIELD(weight_layout)
         .set_default("NC")
         .describe("Dimension ordering of weight. Packed layouts, such as NC8n, are possible.");
+    TVM_ATTR_FIELD(is_batch_matmul)
+        .set_default(false)
+        .describe("Whether it is a batch matmul.");
   }
 };
 

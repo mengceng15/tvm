@@ -234,6 +234,42 @@ std::string AutoQuery_matmul(int M, int K, int N) {//int *shapes, struct StructF
     return res;
 }
 
+std::string AutoQuery_batch_matmul(int B1, int B2, int M, int K, int N) {//int *shapes, struct StructFormat* res
+    dnnl::engine eng(dnnl::engine::kind::cpu, 0);
+    dnnl::stream s(eng);
+    using tag = dnnl::memory::format_tag;
+    using dt = dnnl::memory::data_type;
+
+    // const dnnl::memory::dim batch = N;
+
+    dnnl::memory::dims bmatmul1_src_tz = {B1, B2, M, K};
+    dnnl::memory::dims bmatmul1_weights_tz = {B1, B2, K, N};
+    dnnl::memory::dims bmatmul1_bias_tz = {B1, B2, M, N};
+    dnnl::memory::dims bmatmul1_dst_tz = {B1, B2, M, N};
+
+    auto bmatmul1_src_md = dnnl::memory::desc({bmatmul1_src_tz}, dt::f32, tag::any);
+    auto bmatmul1_weights_md = dnnl::memory::desc({bmatmul1_weights_tz}, dt::f32, tag::any);
+    auto bmatmul1_bias_md = dnnl::memory::desc({bmatmul1_bias_tz}, dt::f32, tag::any);
+    auto bmatmul1_dst_md = dnnl::memory::desc({bmatmul1_dst_tz}, dt::f32, tag::any);
+
+    auto bmatmul1_d = dnnl::matmul::desc(bmatmul1_src_md, bmatmul1_weights_md,
+            bmatmul1_bias_md, bmatmul1_dst_md);
+    auto bmatmul1_pd = dnnl::matmul::primitive_desc(bmatmul1_d, eng);
+
+    auto src_format = bmatmul1_pd.src_desc();//.data;
+    auto weights_format = bmatmul1_pd.weights_desc();//.data;
+    auto bias_format = bmatmul1_pd.bias_desc();
+    auto dst_format = bmatmul1_pd.dst_desc();//.data;
+    std::string src_df, weight_df, bias_df, dst_df;
+
+    src_df = md2fmt_tag_str(&src_format);
+    weight_df = md2fmt_tag_str(&weights_format);
+    bias_df = md2fmt_tag_str(&bias_format);
+    dst_df = md2fmt_tag_str(&dst_format);
+    std::string res = src_df + "," + weight_df + "," + bias_df + "," + dst_df;
+    return res;
+}
+
 std::string AutoQuery_innerproduct(int B, int IC, int OC) {//int *shapes, struct StructFormat* res
     dnnl::engine eng(dnnl::engine::kind::cpu, 0);
     dnnl::stream s(eng);
@@ -276,6 +312,10 @@ TVM_REGISTER_GLOBAL("relay.ir.AutoQuery").set_body([](TVMArgs args, TVMRetValue*
 
 TVM_REGISTER_GLOBAL("relay.ir.AutoQuery_matmul").set_body([](TVMArgs args, TVMRetValue* rv) {
   *rv = AutoQuery_matmul(args[0], args[1], args[2]);
+});
+
+TVM_REGISTER_GLOBAL("relay.ir.AutoQuery_batch_matmul").set_body([](TVMArgs args, TVMRetValue* rv) {
+  *rv = AutoQuery_batch_matmul(args[0], args[1], args[2], args[3], args[4]);
 });
 
 TVM_REGISTER_GLOBAL("relay.ir.AutoQuery_innerproduct").set_body([](TVMArgs args, TVMRetValue* rv) {

@@ -1610,10 +1610,11 @@ class PyTorchOpConverter:
 
         # debug
         if len(a_shape) == 3 and len(b_shape) == 2:
-            # remove the tranpose of the second input since going to 
-            # calculate it with oneDNN matmul primitive in stead of InnerProduct
             input_1 = _op.transpose(inputs_1, axes=(1, 0)) 
             out = _op.nn.special_matmul(inputs_0, input_1)
+            return out
+        if len(a_shape) == 4 and len(b_shape) == 4:
+            out = _op.nn.special_matmul(inputs_0, inputs_1, "NCHW", True)
             return out
         # debug
 

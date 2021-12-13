@@ -32,66 +32,62 @@ class PrintIR:
         print("Running pass: {}", info)
         print(mod)
 
-weight_dic = {"a":"N",
-              "b":"C",}
-
-# @relay.op.register_alter_op_layout("nn.dense", level=114)
-# def alter_dense(attrs, inputs, tinfos, out_type):
-#     data, weight = inputs
-#     data_tensor, weight_tensor = tinfos
-
-#     B, IC = get_const_tuple(data_tensor.shape)
-#     OC, IC = get_const_tuple(weight_tensor.shape)
-
-#     res = relay.query_layout.AutoQuery_innerproduct(B, IC, OC)
-#     print("queried weight layout:", res)
-#     new_attrs = dict(attrs)
-
-#     _, weight_df, _, _ = res.split(',')
-
-#     def trans_data(input_data, is_weight=False):
-#         dic = weight_dic
-#         res = input_data
-                
-#         for key, value in dic.items():
-#             if key.upper() in input_data:
-#                 res = res.replace(key.upper(), value, 1)
-#                 res = res.replace(key, value.lower(), 1)
-#             else:
-#                 res = res.replace(key, value, 1)
-#         return res
-
-#     print("translated weight layout:", trans_data(weight_df, is_weight=True))
-#     new_attrs['weight_layout'] = trans_data(weight_df, is_weight=True)
-
-#     return relay.nn.contrib_dense_pack(data, weight, **new_attrs)
+weight_dic = {"A":"N",
+              "B":"C",
+              "C":"H",
+              "D":"W",
+              "a":"n",
+              "b":"c",
+              "c":"h",
+              "d":"w"}
 
 @relay.op.register_alter_op_layout("nn.special_matmul", level=114)
 def alter_special_matmul(attrs, inputs, tinfos, out_type):
+    new_attrs = dict(attrs)
+
     data, weight = inputs
     data_tensor, weight_tensor = tinfos
 
-    B, M, IC = get_const_tuple(data_tensor.shape)
-    OC, IC = get_const_tuple(weight_tensor.shape)
-    B = B * M
+    if new_attrs['is_batch_matmul']:
+        B1, B2, M, K = get_const_tuple(data_tensor.shape)
+        _, _, N, _ = get_const_tuple(weight_tensor.shape)
+        res = relay.query_layout.AutoQuery_batch_matmul(B1, B2, M, K, N)
+    else:
+        B, M, IC = get_const_tuple(data_tensor.shape)
+        OC, IC = get_const_tuple(weight_tensor.shape)
+        B = B * M
+        res = relay.query_layout.AutoQuery_innerproduct(B, IC, OC)
 
-    res = relay.query_layout.AutoQuery_innerproduct(B, IC, OC)
     print("queried weight layout:", res)
-    new_attrs = dict(attrs)
 
     _, weight_df, _, _ = res.split(',')
 
     def trans_data(input_data, is_weight=False):
         dic = weight_dic
-        res = input_data
-                
-        for key, value in dic.items():
-            if key.upper() in input_data:
-                res = res.replace(key.upper(), value, 1)
-                res = res.replace(key, value.lower(), 1)
+        input_str = [c for c in input_data]
+        output_list = []
+        
+        for c in input_str:
+            if c in dic.keys():
+                output_list += dic[c]
             else:
-                res = res.replace(key, value, 1)
-        return res
+                output_list += c
+
+        all_lower_case = True
+        for c in output_list:
+            if c == c.upper():
+                all_lower_case = False
+                break
+        
+        if all_lower_case:
+            for i in range(len(output_list)):
+                output_list[i] = output_list[i].upper()
+
+        output_str = ""
+        for c in output_list:
+            output_str += c
+
+        return output_str
 
     print("translated weight layout:", trans_data(weight_df, is_weight=True))
     new_attrs['weight_layout'] = trans_data(weight_df, is_weight=True)
@@ -167,7 +163,7 @@ def dense_bias_mul_add_example():
 
     return relay.Function([x, y, b, data_mul, data_add], add)
 
-def check_correctness(func, batch_size=1, batches=10, warmup=2):
+def check_correctness(func):
     ctx = tvm.cpu()
     f = func()
     mod = tvm.IRModule.from_expr(f)
@@ -246,9 +242,55 @@ def check_correctness(func, batch_size=1, batches=10, warmup=2):
         np.testing.assert_almost_equal(ans, tvm_output, decimal=5)
         print("dense_bias_mul_add_example: passed\n")
 
+def dense_batch_matmul_example():
+    x = relay.var("x", relay.TensorType((1, 12, 14, 14), "float32"))
+    y = relay.var("y", relay.TensorType((1, 12, 14, 64), "float32"))
+    matmul0 = nn.special_matmul(x, y, "NCHW", is_batch_matmul=True)
+
+    return relay.Function([x, y], matmul0)
+
+def check_batch_matmul_correctness(func):
+    ctx = tvm.cpu()
+    f = func()
+    mod = tvm.IRModule.from_expr(f)
+    # print(mod['main'].astext(show_meta_data=False))
+
+    print(mod)
+    mod = relay.transform.CanonicalizeOps()(mod)
+    mod = relay.transform.InferType()(mod)
+    mod = relay.transform.SimplifyInference()(mod)
+    mod = relay.transform.FoldConstant()(mod)
+    mod = relay.transform.FoldScaleAxis()(mod)
+    mod = relay.transform.FoldConstant()(mod)
+    with TempOpAttr("nn.special_matmul", "FTVMAlterOpLayout", alter_special_matmul):
+        mod = relay.transform.AlterOpLayout()(mod)
+    print(mod)
+    mod = relay.transform.FoldConstant()(mod)
+    mod = relay.transform.MergeComposite(pattern_table())(mod)
+    mod = relay.transform.AnnotateTarget(["dnnl"])(mod)
+    mod = relay.transform.MergeCompilerRegions()(mod)
+    mod = relay.transform.PartitionGraph()(mod)
+    # print(mod['main'].astext(show_meta_data=False))
+
+    json, lib, params = relay.build(mod, "llvm")
+    rt_mod = tvm.contrib.graph_executor.create(json, lib, ctx)#Create a runtime executor module given a graph and module.
+
+    datax = np.random.uniform(size=(1, 12, 14, 14)) - 0.5
+    datay = np.random.uniform(size=(1, 12, 14, 64)) - 0.5
+
+    rt_mod.set_input("x", tvm.nd.array(datax.astype("float32")))
+    rt_mod.set_input("y", tvm.nd.array(datay.astype("float32")))
+    rt_mod.run()
+    tvm_output = rt_mod.get_output(0).numpy()
+
+    ans = np.matmul(datax, datay)
+    np.testing.assert_almost_equal(ans, tvm_output, decimal=5)
+    print("batch_matmul_example: passed\n")
+
 check_correctness(dense_example)
 check_correctness(dense_bias_example)
 check_correctness(dense_bias_relu_example)
 check_correctness(dense_bias_gelu_example)
 check_correctness(dense_bias_mul_example)
 check_correctness(dense_bias_mul_add_example)
+check_batch_matmul_correctness(dense_batch_matmul_example)

@@ -308,12 +308,13 @@ RELAY_REGISTER_OP("nn.contrib_dense_pack")
 TVM_REGISTER_NODE_TYPE(SpecialMatmulAttrs);
 
 // Positional relay function to create special_matmul operator used by frontend FFI.
-Expr MakeSpecialMatmul(Expr data, Expr weight, tvm::String weight_layout, IndexExpr units,
-                   DataType out_dtype) {
+Expr MakeSpecialMatmul(Expr data, Expr weight, tvm::String weight_layout,
+ bool is_batch_matmul, IndexExpr units, DataType out_dtype) {
   auto attrs = make_object<SpecialMatmulAttrs>();
   attrs->units = units;
   attrs->out_dtype = out_dtype;
   attrs->weight_layout = std::move(weight_layout);
+  attrs->is_batch_matmul = is_batch_matmul;
   static const Op& op = Op::Get("nn.special_matmul");
   return Call(op, {data, weight}, Attrs(attrs), {});
 }
@@ -330,13 +331,17 @@ bool SpecialMatmulRel(const Array<Type>& types, int num_inputs, const Attrs& att
   const SpecialMatmulAttrs* param = attrs.as<SpecialMatmulAttrs>();
   ICHECK(param != nullptr);
 
-  ICHECK_EQ(data->shape.size(), 3) << "Only 2D data is supported";
-
   Array<tvm::PrimExpr> oshape = data->shape;
-//   ICHECK_EQ(weight->shape.size(), 4) << "Weight is not packed 4D";
-  auto oc = weight->shape.size() == 2 ? weight->shape[0] :
-   weight->shape[0] * weight->shape[3];
-  oshape.Set(2, oc);
+  if(param->is_batch_matmul) { // Batch matmul
+    ICHECK_EQ(data->shape.size(), 4) << "Only 4D data is supported for batch matmul";
+    auto oc = weight->shape[3];
+    oshape.Set(3, oc);
+  } else { // Normal 3d x 2D
+    ICHECK_EQ(data->shape.size(), 3) << "Only 3D data is supported";
+    auto oc = weight->shape.size() == 2 ? weight->shape[0] :
+    weight->shape[0] * weight->shape[3];
+    oshape.Set(2, oc);
+  }
 
   DataType out_dtype = param->out_dtype;
   if (out_dtype.bits() == 0) {
@@ -353,16 +358,16 @@ InferCorrectLayoutOutput SpecialMatmulInferCorrectLayout(const Attrs& attrs,
                                                      const Array<tvm::relay::Type>& old_in_types) {
   auto params = attrs.as<SpecialMatmulAttrs>();
   ICHECK(params);
-  return InferCorrectLayoutOutput({"NCW", params->weight_layout}, {"NCW"}, attrs);
+  if(params->is_batch_matmul) {
+    return InferCorrectLayoutOutput({"NCHW", params->weight_layout}, {"NCHW"}, attrs);
+  } else {
+    return InferCorrectLayoutOutput({"NCW", params->weight_layout}, {"NCW"}, attrs);
+  }
 }
 
 RELAY_REGISTER_OP("nn.special_matmul")
-    .describe(R"code(Applies a linear transformation: :math:`Y = XW^T`.
-
-- **data**: `(batch, input_dim)`
-- **weight**: `(units // pack_weight_tile, input_dim, pack_weight_tile)`
-- **out**: `(batch, units)`.
-
+    .describe(R"code(
+        BYOC special matmul
 )code" TVM_ADD_FILELINE)
     .set_attrs_type<SpecialMatmulAttrs>()
     .set_num_inputs(2)
