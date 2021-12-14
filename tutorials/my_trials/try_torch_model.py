@@ -72,13 +72,10 @@ class CustomPipeline:
             def visit_call(self, call):
                 new_fn = self.visit(call.op)
                 new_args = [self.visit(arg) for arg in call.args]
-                print(call.op.name)
                 if "nn.special_matmul" == call.op.name:
                     in0_shape = call.type_args[0].shape
                     in1_shape = call.type_args[1].shape
                     if len(in0_shape) == 4 and len(in1_shape) == 4: # batch_matmul
-                        print(in0_shape)
-                        print(in1_shape)
                         in0_reshape = relay.reshape(new_args[0], (-1, in0_shape[-2], in0_shape[-1]))
                         trans_axes = list(range(len(in1_shape)))
                         trans_axes[-2], trans_axes[-1] = trans_axes[-1], trans_axes[-2]
