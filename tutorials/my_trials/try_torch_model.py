@@ -11,6 +11,8 @@ from transformers import BertModel, BertTokenizer, BertConfig
 import torch
 import numpy as np
 
+from tvm.relay.expr import Call
+
 from tvm.relay.testing.temp_op_attr import TempOpAttr
 
 from tvm.topi.utils import get_const_tuple
@@ -62,6 +64,36 @@ weight_dic = {"A":"N",
               "b":"c",
               "c":"h",
               "d":"w"}
+
+@relay.transform.function_pass(opt_level=1)
+class CustomPipeline:
+    def transform_function(self, func, mod, ctx):
+        class FallbackSpecialMatmul(tvm.relay.ExprMutator):
+            def visit_call(self, call):
+                new_fn = self.visit(call.op)
+                new_args = [self.visit(arg) for arg in call.args]
+                print(call.op.name)
+                if "nn.special_matmul" == call.op.name:
+                    in0_shape = call.type_args[0].shape
+                    in1_shape = call.type_args[1].shape
+                    if len(in0_shape) == 4 and len(in1_shape) == 4: # batch_matmul
+                        print(in0_shape)
+                        print(in1_shape)
+                        in0_reshape = relay.reshape(new_args[0], (-1, in0_shape[-2], in0_shape[-1]))
+                        trans_axes = list(range(len(in1_shape)))
+                        trans_axes[-2], trans_axes[-1] = trans_axes[-1], trans_axes[-2]
+                        in1_trans = relay.transpose(new_args[1], trans_axes)
+                        in1_reshape = relay.reshape(in1_trans, (-1, in1_shape[-1], in1_shape[-2]))
+                        batch_matmul = nn.batch_matmul(in0_reshape, in1_reshape)
+                        batch_matmul_reshape = relay.reshape(batch_matmul, (*in0_shape[:-2], in0_shape[-2], in1_shape[-1]))
+                        return batch_matmul_reshape
+                    else: # in0->3d in1->2d
+                        in0_reshape = relay.reshape(new_args[0], (-1, in0_shape[-1]))
+                        matmul = nn.dense(in0_reshape, new_args[1])
+                        matmul_reshape = relay.reshape(matmul, (*in0_shape[:-1], in1_shape[-2]))
+                        return matmul_reshape
+                return Call(new_fn, new_args, call.attrs, call.type_args, call.span)
+        return FallbackSpecialMatmul().visit(func)
 
 @relay.op.register_alter_op_layout("nn.special_matmul", level=114)
 def alter_special_matmul(attrs, inputs, tinfos, out_type):
@@ -116,10 +148,16 @@ def alter_special_matmul(attrs, inputs, tinfos, out_type):
 
     return relay.nn.special_matmul(data, weight, **new_attrs)
 
-print(mod_bert)
 mod_bert = relay.transform.CanonicalizeOps()(mod_bert)
 mod_bert = relay.transform.InferType()(mod_bert)
 mod_bert = relay.transform.SimplifyInference()(mod_bert)
+
+# enable the fallback pass if not using byoc onednn
+# custom_pass = CustomPipeline()
+# print(mod_bert)
+# mod_cus = custom_pass(mod_bert)
+# print(mod_cus)
+
 mod_bert = relay.transform.FoldConstant()(mod_bert)
 mod_bert = relay.transform.FoldScaleAxis()(mod_bert)
 mod_bert = relay.transform.FoldConstant()(mod_bert)
@@ -148,4 +186,15 @@ with tvm.transform.PassContext(opt_level=3):
 module = tvm.contrib.graph_executor.create(graph, lib, ctx)
 module.set_input("attention_mask", tvm.nd.array(tt_a))
 module.set_input("input_ids", tvm.nd.array(st_a))
-module.run()
+
+import time
+
+def x():
+    for i in range(100):
+        module.run()
+    ctx.sync()
+
+start = time.time()
+x()
+end = time.time()
+print("time:", (end-start)/100)
