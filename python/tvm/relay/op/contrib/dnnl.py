@@ -183,6 +183,16 @@ def make_special_matmul_bias_mul_add_pattern():
     out = is_op("add")(mul, data3)
     return out
 
+def make_special_matmul_div_add_pattern():
+    data = wildcard()
+    weight = wildcard()
+    data_div = wildcard()
+    data_add = wildcard()
+    densepack = is_op("nn.special_matmul")(data, weight)
+    div = is_op("divide")(densepack, data_div)
+    out = is_op("add")(div, data_add)
+    return out
+
 @register_pattern_table("dnnl")
 def pattern_table():
     conv2d_bias_sum_relu_pat = ("dnnl.conv2d_bias_sum_relu", make_conv_add_sum_relu_pattern())
@@ -196,8 +206,12 @@ def pattern_table():
     special_matmul_bias_gelu_pat = ("dnnl.special_matmul_bias_gelu", make_special_matmul_bias_gelu_pattern())
     special_matmul_bias_mul_pat = ("dnnl.special_matmul_bias_mul", make_special_matmul_bias_mul_pattern())
     special_matmul_bias_mul_add_pat = ("dnnl.special_matmul_bias_mul_add", make_special_matmul_bias_mul_add_pattern())
+    
+    special_matmul_div_add_pat = ("dnnl.special_matmul_div_add", make_special_matmul_div_add_pattern())
+    
     dnnl_patterns = [conv2d_bias_sum_relu_pat, conv2d_bias_relu_pat, conv2d_bias_pat,
     #  dense_bias_relu_pat, dense_bias_pat,
-     special_matmul_bias_gelu_pat, special_matmul_bias_mul_add_pat, special_matmul_bias_relu_pat, special_matmul_bias_mul_pat, special_matmul_bias_pat] #conv2d_relu_pat, 
+     special_matmul_bias_gelu_pat, special_matmul_bias_mul_add_pat, special_matmul_bias_relu_pat,
+     special_matmul_bias_mul_pat, special_matmul_div_add_pat, special_matmul_bias_pat] #conv2d_relu_pat, 
     return dnnl_patterns
     

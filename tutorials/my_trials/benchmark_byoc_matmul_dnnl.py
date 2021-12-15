@@ -213,15 +213,15 @@ def check_correctness(func):
 
     if func == dense_example:
         ans = np.matmul(datax.reshape((2 * 14, 768)), datay).reshape(2, 14, 16)
-        np.testing.assert_almost_equal(ans, tvm_output, decimal=5)
+        np.testing.assert_allclose(ans, tvm_output, rtol=1e-05, atol=1e-05)
         print("dense_example: passed\n")
     if func == dense_bias_example:
         ans = (np.matmul(datax.reshape((2 * 14, 768)), datay) + datab).reshape(2, 14, 16)
-        np.testing.assert_almost_equal(ans, tvm_output, decimal=5)
+        np.testing.assert_allclose(ans, tvm_output, rtol=1e-05, atol=1e-05)
         print("dense_bias_example: passed\n")
     if func == dense_bias_relu_example:
         ans = np.maximum(np.matmul(datax.reshape((2 * 14, 768)), datay) + datab, 0).reshape(2, 14, 16)
-        np.testing.assert_almost_equal(ans, tvm_output, decimal=5)
+        np.testing.assert_allclose(ans, tvm_output, rtol=1e-05, atol=1e-05)
         print("dense_bias_relu_example: passed\n")
     if func == dense_bias_gelu_example:
         ans0 = np.matmul(datax.reshape((2 * 14, 768)), datay) + datab
@@ -231,15 +231,15 @@ def check_correctness(func):
         ans1 = ans1 + 1.0
         ans = ans1 * ans2
         ans = ans.reshape((2, 14, 16))
-        np.testing.assert_almost_equal(ans, tvm_output, decimal=5)
+        np.testing.assert_allclose(ans, tvm_output, rtol=1e-05, atol=1e-05)
         print("dense_bias_gelu_example: passed\n")
     if func == dense_bias_mul_example:
         ans = ((np.matmul(datax.reshape((2 * 14, 768)), datay) + datab) * datamul.reshape(2 * 14, 16)).reshape(2, 14, 16)
-        np.testing.assert_almost_equal(ans, tvm_output, decimal=5)
+        np.testing.assert_allclose(ans, tvm_output, rtol=1e-05, atol=1e-05)
         print("dense_bias_mul_example: passed\n")
     if func == dense_bias_mul_add_example:
         ans = ((np.matmul(datax.reshape((2 * 14, 768)), datay) + datab) * datamul.reshape(2 * 14, 16) + dataadd.reshape(2 * 14, 16)).reshape(2, 14, 16)
-        np.testing.assert_almost_equal(ans, tvm_output, decimal=5)
+        np.testing.assert_allclose(ans, tvm_output, rtol=1e-05, atol=1e-05)
         print("dense_bias_mul_add_example: passed\n")
 
 def dense_batch_matmul_example():
@@ -249,13 +249,24 @@ def dense_batch_matmul_example():
 
     return relay.Function([x, y], matmul0)
 
+def dense_batch_matmul_div_add_example():
+    x = relay.var("x", relay.TensorType((1, 12, 14, 14), "float32"))
+    y = relay.var("y", relay.TensorType((1, 12, 14, 64), "float32"))
+    data_div = relay.var("data_div", relay.TensorType((1, 12, 14, 64), "float32"))
+    data_add = relay.var("data_add", relay.TensorType((1, 12, 14, 64), "float32"))
+    matmul0 = nn.special_matmul(x, y, "NCHW", is_batch_matmul=True)
+    div = relay.divide(matmul0, data_div)
+    add = relay.add(div, data_add)
+
+    return relay.Function([x, y, data_div, data_add], add)
+
 def check_batch_matmul_correctness(func):
     ctx = tvm.cpu()
     f = func()
     mod = tvm.IRModule.from_expr(f)
     # print(mod['main'].astext(show_meta_data=False))
 
-    print(mod)
+    # print(mod)
     mod = relay.transform.CanonicalizeOps()(mod)
     mod = relay.transform.InferType()(mod)
     mod = relay.transform.SimplifyInference()(mod)
@@ -264,12 +275,13 @@ def check_batch_matmul_correctness(func):
     mod = relay.transform.FoldConstant()(mod)
     with TempOpAttr("nn.special_matmul", "FTVMAlterOpLayout", alter_special_matmul):
         mod = relay.transform.AlterOpLayout()(mod)
-    print(mod)
+    # print(mod)
     mod = relay.transform.FoldConstant()(mod)
     mod = relay.transform.MergeComposite(pattern_table())(mod)
     mod = relay.transform.AnnotateTarget(["dnnl"])(mod)
     mod = relay.transform.MergeCompilerRegions()(mod)
     mod = relay.transform.PartitionGraph()(mod)
+    # print(mod)
     # print(mod['main'].astext(show_meta_data=False))
 
     json, lib, params = relay.build(mod, "llvm")
@@ -277,14 +289,21 @@ def check_batch_matmul_correctness(func):
 
     datax = np.random.uniform(size=(1, 12, 14, 14)) - 0.5
     datay = np.random.uniform(size=(1, 12, 14, 64)) - 0.5
+    data_div = np.random.uniform(size=(1, 12, 14, 64)) - 0.5
+    data_add = np.random.uniform(size=(1, 12, 14, 64)) - 0.5
 
     rt_mod.set_input("x", tvm.nd.array(datax.astype("float32")))
     rt_mod.set_input("y", tvm.nd.array(datay.astype("float32")))
+    if func == dense_batch_matmul_div_add_example:
+        rt_mod.set_input("data_div", tvm.nd.array(data_div.astype("float32")))
+        rt_mod.set_input("data_add", tvm.nd.array(data_add.astype("float32")))
     rt_mod.run()
     tvm_output = rt_mod.get_output(0).numpy()
 
     ans = np.matmul(datax, datay)
-    np.testing.assert_almost_equal(ans, tvm_output, decimal=5)
+    if func == dense_batch_matmul_div_add_example:
+        ans = (ans / data_div) + data_add
+    np.testing.assert_allclose(ans, tvm_output, rtol=1e-05, atol=1e-05)
     print("batch_matmul_example: passed\n")
 
 check_correctness(dense_example)
@@ -294,3 +313,4 @@ check_correctness(dense_bias_gelu_example)
 check_correctness(dense_bias_mul_example)
 check_correctness(dense_bias_mul_add_example)
 check_batch_matmul_correctness(dense_batch_matmul_example)
+check_batch_matmul_correctness(dense_batch_matmul_div_add_example)

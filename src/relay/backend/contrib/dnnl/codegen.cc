@@ -510,6 +510,9 @@ class DNNLJSONSerializer : public backend::contrib::JSONSerializer {
       } else if (name == "dnnl.special_matmul_bias_mul") {
         call = GetRootCall(fn->body.as<CallNode>(), 2, {"nn.special_matmul", "add", "multiply"});
         ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name == "dnnl.special_matmul_div_add") {
+        call = GetRootCall(fn->body.as<CallNode>(), 2, {"nn.special_matmul", "divide", "add"});
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
       } else if (name == "dnnl.special_matmul_bias_mul_add") {
         call = GetRootCall(fn->body.as<CallNode>(), 3, {"nn.special_matmul", "add", "multiply", "add"});
         ICHECK(call->op.as<OpNode>()) << "Not op node";

@@ -162,7 +162,7 @@ with TempOpAttr("nn.special_matmul", "FTVMAlterOpLayout", alter_special_matmul):
     mod_bert = relay.transform.AlterOpLayout()(mod_bert)
 mod_bert = relay.transform.FoldConstant()(mod_bert)
 mod_bert = relay.transform.MergeComposite(pattern_table())(mod_bert)
-# print(mod_bert)
+print(mod_bert)
 mod_bert = relay.transform.AnnotateTarget(["dnnl"])(mod_bert)
 mod_bert = relay.transform.MergeCompilerRegions()(mod_bert)
 mod_bert = relay.transform.PartitionGraph()(mod_bert)
@@ -183,15 +183,16 @@ with tvm.transform.PassContext(opt_level=3):
 module = tvm.contrib.graph_executor.create(graph, lib, ctx)
 module.set_input("attention_mask", tvm.nd.array(tt_a))
 module.set_input("input_ids", tvm.nd.array(st_a))
+module.run()
 
-import time
+# import time
 
-def x():
-    for i in range(100):
-        module.run()
-    ctx.sync()
+# def x():
+#     for i in range(100):
+#         module.run()
+#     ctx.sync()
 
-start = time.time()
-x()
-end = time.time()
-print("time:", (end-start)/100)
+# start = time.time()
+# x()
+# end = time.time()
+# print("time:", (end-start)/100)
