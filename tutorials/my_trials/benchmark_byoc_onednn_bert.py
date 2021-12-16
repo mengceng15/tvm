@@ -109,7 +109,7 @@ def alter_special_matmul(attrs, inputs, tinfos, out_type):
         B = B * M
         res = relay.query_layout.AutoQuery_innerproduct(B, IC, OC)
 
-    print("queried weight layout:", res)
+    # print("queried weight layout:", res)
 
     _, weight_df, _, _ = res.split(',')
 
@@ -140,7 +140,7 @@ def alter_special_matmul(attrs, inputs, tinfos, out_type):
 
         return output_str
 
-    print("translated weight layout:", trans_data(weight_df, is_weight=True))
+    # print("translated weight layout:", trans_data(weight_df, is_weight=True))
     new_attrs['weight_layout'] = trans_data(weight_df, is_weight=True)
 
     return relay.nn.special_matmul(data, weight, **new_attrs)
@@ -151,9 +151,7 @@ mod_bert = relay.transform.SimplifyInference()(mod_bert)
 
 # enable the fallback pass if not using byoc onednn
 # custom_pass = CustomPipeline()
-# print(mod_bert)
-# mod_cus = custom_pass(mod_bert)
-# print(mod_cus)
+# mod_bert = custom_pass(mod_bert)
 
 mod_bert = relay.transform.FoldConstant()(mod_bert)
 mod_bert = relay.transform.FoldScaleAxis()(mod_bert)
@@ -162,7 +160,7 @@ with TempOpAttr("nn.special_matmul", "FTVMAlterOpLayout", alter_special_matmul):
     mod_bert = relay.transform.AlterOpLayout()(mod_bert)
 mod_bert = relay.transform.FoldConstant()(mod_bert)
 mod_bert = relay.transform.MergeComposite(pattern_table())(mod_bert)
-print(mod_bert)
+# print(mod_bert)
 mod_bert = relay.transform.AnnotateTarget(["dnnl"])(mod_bert)
 mod_bert = relay.transform.MergeCompilerRegions()(mod_bert)
 mod_bert = relay.transform.PartitionGraph()(mod_bert)
@@ -185,14 +183,14 @@ module.set_input("attention_mask", tvm.nd.array(tt_a))
 module.set_input("input_ids", tvm.nd.array(st_a))
 module.run()
 
-# import time
+import time
 
-# def x():
-#     for i in range(100):
-#         module.run()
-#     ctx.sync()
+def x():
+    for i in range(1000):
+        module.run()
+    ctx.sync()
 
-# start = time.time()
-# x()
-# end = time.time()
-# print("time:", (end-start)/100)
+start = time.time()
+x()
+end = time.time()
+print("time:", (end-start)/1000)
