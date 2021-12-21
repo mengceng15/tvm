@@ -50,11 +50,19 @@ model = BertModel.from_pretrained("bert-base-uncased", torchscript=True)
 
 # Creating the trace
 traced_model = torch.jit.trace(model, [tokens_tensor, segments_tensors])
-#torch.jit.save(traced_model, "/home/mengceng/traced_bert.pt")
+traced_model.eval()
+for p in traced_model.parameters():
+    p.requires_grad_(False)
+torch_result = traced_model(tokens_tensor, segments_tensors)
+# print("torch_result")
+# print(torch_result[0])
 
 shape_list = [(i.debugName().split('.')[0], i.type().sizes()) for i in  list(traced_model.graph.inputs())[1:]]
 mod_bert, params_bert = tvm.relay.frontend.pytorch.from_pytorch(traced_model,
                         shape_list, default_dtype="float32")
+
+# layer0_query_weight = params_bert['encoder.layer.0.attention.self.query.weight']
+# print(layer0_query_weight.numpy().reshape((12, 48, 16, 64)))
 
 weight_dic = {"A":"N",
               "B":"C",
@@ -152,6 +160,7 @@ mod_bert = relay.transform.SimplifyInference()(mod_bert)
 # enable the fallback pass if not using byoc onednn
 # custom_pass = CustomPipeline()
 # mod_bert = custom_pass(mod_bert)
+# print(mod_bert)
 
 mod_bert = relay.transform.FoldConstant()(mod_bert)
 mod_bert = relay.transform.FoldScaleAxis()(mod_bert)
@@ -179,8 +188,9 @@ with tvm.transform.PassContext(opt_level=3):
                                      params=params_bert)
 
 module = tvm.contrib.graph_executor.create(graph, lib, ctx)
-module.set_input("attention_mask", tvm.nd.array(tt_a))
-module.set_input("input_ids", tvm.nd.array(st_a))
+module.set_input("input_ids", tvm.nd.array(tt_a))
+module.set_input("attention_mask", tvm.nd.array(st_a))
+module.set_input(**params)
 module.run()
 
 import time

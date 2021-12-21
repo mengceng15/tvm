@@ -182,6 +182,7 @@ def check_correctness(func):
     mod = relay.transform.AnnotateTarget(["dnnl"])(mod)
     mod = relay.transform.MergeCompilerRegions()(mod)
     mod = relay.transform.PartitionGraph()(mod)
+    # print(mod)
     # print(mod['main'].astext(show_meta_data=False))
 
     json, lib, params = relay.build(mod, "llvm")

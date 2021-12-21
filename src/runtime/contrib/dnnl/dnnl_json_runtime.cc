@@ -99,7 +99,32 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     }
     // Invoke the engine through intepreting the stream.
     for (size_t i = 0; i < net_.size(); ++i) {
+      // std::cout << "pre_out_entry: ";
+      // for (auto j = 0; j < 10; j++) {
+      //     std::cout << *((float *)net_args_.at(i)[DNNL_ARG_DST].get_data_handle() + j) << " ";
+      // }
+      // std::cout << std::endl;
+
       net_.at(i).execute(stream_, net_args_.at(i));
+
+      // debug
+      // std::cout << "src_entry: ";
+      // for (auto j = 0; j < 10; j++) {
+      //     std::cout << *((float *)net_args_.at(i)[DNNL_ARG_SRC].get_data_handle() + j) << " ";
+      // }
+      // std::cout << std::endl;
+
+      // std::cout << "wei_entry: ";
+      // for (auto j = 0; j < 10; j++) {
+      //     std::cout << *((float *)net_args_.at(i)[DNNL_ARG_WEIGHTS].get_data_handle() + j) << " ";
+      // }
+      // std::cout << std::endl;
+
+      // std::cout << "out_entry: ";
+      // for (auto j = 0; j < 10; j++) {
+      //     std::cout << *((float *)net_args_.at(i)[DNNL_ARG_DST].get_data_handle() + j) << " ";
+      // }
+      // std::cout << std::endl;
     }
     stream_.wait();
   }
@@ -351,6 +376,34 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
         auto bias_md = dnnl::memory::desc({bias_dims, dt::f32, tag::nchw});
         auto dst_md = dnnl::memory::desc({out_dims, dt::f32, tag::nchw});
 
+        auto mul_div_md = dst_md;
+        auto add_md = dst_md;
+        if (has_div) {
+          // debug
+          // std::cout << "HAS DIV" << std::endl;
+          auto div_entry = node.GetInputs()[2];
+          auto add_entry = node.GetInputs()[3];
+          dnnl::memory::dims div_shape = nodes_[div_entry.id_].GetOpShape()[div_entry.index_];
+          // std::cout << "Third_shape: " << third_shape.size() << std::endl;
+          // for (auto i = 0; i < third_shape.size(); i++) {
+          //   std::cout << third_shape[i] << " ";
+          // }
+          // std::cout << std::endl;
+          dnnl::memory::dims add_shape = nodes_[add_entry.id_].GetOpShape()[add_entry.index_];
+          // std::cout << "Forth_shape: " << forth_shape.size() <<  std::endl;
+          // for (auto i = 0; i < forth_shape.size(); i++) {
+          //   std::cout << forth_shape[i] << " ";
+          // }
+          // std::cout << std::endl;
+          
+          if (div_shape.size() == 0) {
+            mul_div_md = dnnl::memory::desc({{1, 1, 1, 1}, dt::f32, tag::nchw});
+          } else {
+            mul_div_md = dnnl::memory::desc({div_shape, dt::f32, tag::nchw});
+          }
+          add_md = dnnl::memory::desc({add_shape, dt::f32, tag::nchw});
+        }
+
         auto matmul_desc = has_bias?
             dnnl::matmul::desc(data_md, weight_md, bias_md, dst_md):
             dnnl::matmul::desc(data_md, weight_md, dst_md);
@@ -366,10 +419,10 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
             ops.append_binary(dnnl::algorithm::binary_mul, dst_md);
         }
         if (has_div == true) {
-            ops.append_binary(dnnl::algorithm::binary_div, dst_md);
+            ops.append_binary(dnnl::algorithm::binary_div, mul_div_md);
         }
         if (has_add == true) {
-            ops.append_binary(dnnl::algorithm::binary_add, dst_md);
+            ops.append_binary(dnnl::algorithm::binary_add, add_md);
         }
         dnnl::primitive_attr attr;
         attr.set_post_ops(ops);
@@ -382,8 +435,8 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
         auto data_memory = BindDNNLMemory(data_entry, data_md);
         auto weight_memory = BindDNNLMemory(weight_entry, weight_md);
         auto bias_memory = dnnl::memory(bias_md, engine_);
-        auto mul_div_memory = dnnl::memory(dst_md, engine_);
-        auto add_memory = dnnl::memory(dst_md, engine_);
+        auto mul_div_memory = dnnl::memory(mul_div_md, engine_);
+        auto add_memory = dnnl::memory(add_md, engine_);
         auto dst_memory = dnnl::memory(dst_md, engine_);
         JSONGraphNodeEntry out_entry(nid, 0);
         
