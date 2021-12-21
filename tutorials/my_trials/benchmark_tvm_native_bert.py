@@ -333,8 +333,8 @@ def benchmark(network, batch_size, dtype, target, log_prefix, repeat):
     # # Feed input data
     tt_a = tvm.nd.array(tokens_tensor.numpy(), ctx) #attention_mask
     st_a = tvm.nd.array(segments_tensors.numpy(), ctx) #input_ids
-    module.set_input("attention_mask", tvm.nd.array(tt_a))
-    module.set_input("input_ids", tvm.nd.array(st_a))
+    module.set_input("input_ids", tvm.nd.array(tt_a))
+    module.set_input("attention_mask", tvm.nd.array(st_a))
 
     # Evaluate
     ftimer = module.module.time_evaluator("run", ctx, min_repeat_ms=500, repeat=repeat)
