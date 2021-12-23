@@ -71,6 +71,16 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     {"NC16c16n", tag::AB16b16a},
     };
 
+  enum class SpecialMatmulPattern {
+    specialMatmulBiasGelu,
+    specialMatmulBiasRelu,
+    specialMatmulBiasMul,
+    specialMatmulDivAdd,
+    specialMatmulBiasMulAdd,
+    specialMatmulBias,
+    None,
+  };
+
   DNNLJSONRuntime(const std::string& symbol_name, const std::string& graph_json,
                   const Array<String> const_names)
       : JSONRuntimeBase(symbol_name, graph_json, const_names) {}
@@ -168,17 +178,17 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
         } else if ("nn.avg_pool2d" == op_name) {
           Pooling(nid, dnnl::algorithm::pooling_avg);
         } else if ("dnnl.special_matmul_bias_gelu" == op_name) {
-          SpecialMatmul(nid, true, "gelu");
+          SpecialMatmul(nid, SpecialMatmulPattern::specialMatmulBiasGelu);
         } else if ("dnnl.special_matmul_bias_relu" == op_name) {
-          SpecialMatmul(nid, true, "relu");
+          SpecialMatmul(nid, SpecialMatmulPattern::specialMatmulBiasRelu);
         } else if ("dnnl.special_matmul_bias_mul" == op_name) {
-          SpecialMatmul(nid, true, "none", true);
+          SpecialMatmul(nid, SpecialMatmulPattern::specialMatmulBiasMul);
         } else if ("dnnl.special_matmul_div_add" == op_name) {
-          SpecialMatmul(nid, false, "none", false, true, true);
+          SpecialMatmul(nid, SpecialMatmulPattern::specialMatmulDivAdd);
         } else if ("dnnl.special_matmul_bias_mul_add" == op_name) {
-          SpecialMatmul(nid, true, "none", true, false, true);
+          SpecialMatmul(nid, SpecialMatmulPattern::specialMatmulBiasMulAdd);
         } else if ("dnnl.special_matmul_bias" == op_name) {
-          SpecialMatmul(nid, true, "none");
+          SpecialMatmul(nid, SpecialMatmulPattern::specialMatmulBias);
         } else if ("nn.special_matmul" == op_name) {
           SpecialMatmul(nid);
         } else {
@@ -342,13 +352,60 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     
   }
 
-  void SpecialMatmul(const size_t& nid, const bool has_bias = false, const std::string act_type = "none",
-             const bool has_mul = false, const bool has_div = false, const bool has_add = false) {
+  void SpecialMatmul(const size_t& nid,
+    SpecialMatmulPattern pattern = SpecialMatmulPattern::None) {
     auto node = nodes_[nid];
 
+    bool has_bias = false;
+    std::string act_type = "none";
+    bool has_mul = false;
+    bool has_div = false;
+    bool has_add = false;
+
+    int data_entry_index = 0;
+    int weight_entry_index = 1;
+    int bias_entry_index;
+    int mul_div_entry_index;
+    int add_entry_index;
+
+    if (pattern == SpecialMatmulPattern::specialMatmulBiasGelu) {
+        has_bias = true;
+        act_type = "gelu";
+        bias_entry_index = 2;
+    }
+    if (pattern == SpecialMatmulPattern::specialMatmulBiasRelu) {
+        has_bias = true;
+        act_type = "relu";
+        bias_entry_index = 2;
+    }
+    if (pattern == SpecialMatmulPattern::specialMatmulBiasMul) {
+        has_bias = true;
+        has_mul = true;
+        bias_entry_index = 2;
+        mul_div_entry_index = 3;
+    }
+    if (pattern == SpecialMatmulPattern::specialMatmulDivAdd) {
+        has_div = true;
+        has_add = true;
+        mul_div_entry_index = 2;
+        add_entry_index = 3;
+    }
+    if (pattern == SpecialMatmulPattern::specialMatmulBiasMulAdd) {
+        has_bias = true;
+        has_mul = true;
+        has_add = true;
+        bias_entry_index = 2;
+        mul_div_entry_index = 3;
+        add_entry_index = 4;
+    }
+    if (pattern == SpecialMatmulPattern::specialMatmulBias) {
+        has_bias = true;
+        bias_entry_index = 2;
+    }
+
     // Setup attributes.
-    auto data_entry = node.GetInputs()[0];
-    auto weight_entry = node.GetInputs()[1];
+    auto data_entry = node.GetInputs()[data_entry_index];
+    auto weight_entry = node.GetInputs()[weight_entry_index];
     dnnl::memory::dims input_shape = nodes_[data_entry.id_].GetOpShape()[data_entry.index_];
     dnnl::memory::dims weight_shape = nodes_[weight_entry.id_].GetOpShape()[weight_entry.index_];
     auto weight_df = layout_dict[node.GetAttr<std::vector<std::string>>("weight_layout")[0]];
@@ -379,8 +436,8 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
         auto mul_div_md = dst_md;
         auto add_md = dst_md;
         if (has_div) {
-          auto div_entry = node.GetInputs()[2];
-          auto add_entry = node.GetInputs()[3];
+          auto div_entry = node.GetInputs()[mul_div_entry_index];
+          auto add_entry = node.GetInputs()[add_entry_index];
           dnnl::memory::dims div_shape = nodes_[div_entry.id_].GetOpShape()[div_entry.index_];
           dnnl::memory::dims add_shape = nodes_[add_entry.id_].GetOpShape()[add_entry.index_];
           
@@ -429,24 +486,20 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
                     {DNNL_ARG_WEIGHTS, weight_memory},
                     {DNNL_ARG_DST, dst_memory}});
         
-        int entry_count = 2;
         if (has_bias) {
-            auto bias_entry = node.GetInputs()[entry_count];
+            auto bias_entry = node.GetInputs()[bias_entry_index];
             auto bias_memory = BindDNNLMemory(bias_entry, bias_md);
             net_args_.back().insert({DNNL_ARG_BIAS, bias_memory});
-            entry_count++;
         } 
         if (has_mul || has_div) {
-            auto mul_div_entry = node.GetInputs()[entry_count];
+            auto mul_div_entry = node.GetInputs()[mul_div_entry_index];
             auto mul_div_memory = BindDNNLMemory(mul_div_entry, mul_div_md);
             net_args_.back().insert({DNNL_ARG_ATTR_MULTIPLE_POST_OP(0) | DNNL_ARG_SRC_1, mul_div_memory});
-            entry_count++;
         }
         if (has_add) {
-            auto add_entry = node.GetInputs()[entry_count];
+            auto add_entry = node.GetInputs()[add_entry_index];
             auto add_memory = BindDNNLMemory(add_entry, add_md);
             net_args_.back().insert({DNNL_ARG_ATTR_MULTIPLE_POST_OP(1) | DNNL_ARG_SRC_1, add_memory});
-            entry_count++;
         }
         BindDNNLMemory(out_entry, dst_memory);
     } else {
@@ -479,7 +532,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
         auto mul_md = dst_md;
         auto add_md = dst_md;
         if (has_mul) {
-            auto mul_entry = node.GetInputs()[3];
+            auto mul_entry = node.GetInputs()[mul_div_entry_index];
             dnnl::memory::dims mul_shape = nodes_[mul_entry.id_].GetOpShape()[mul_entry.index_];
 
             if (mul_shape.size() == 0) {
@@ -492,7 +545,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
         }
 
         if (has_add) {
-            auto add_entry = node.GetInputs()[4];
+            auto add_entry = node.GetInputs()[add_entry_index];
             dnnl::memory::dims add_shape = nodes_[add_entry.id_].GetOpShape()[add_entry.index_];
 
             if (add_shape.size() == 0) {
@@ -543,24 +596,20 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
                     {DNNL_ARG_WEIGHTS, weight_memory},
                     {DNNL_ARG_DST, dst_memory}});
 
-        int entry_count = 2;
         if (has_bias) {
-            auto bias_entry = node.GetInputs()[entry_count];
+            auto bias_entry = node.GetInputs()[bias_entry_index];
             auto bias_memory = BindDNNLMemory(bias_entry, bias_md);
             net_args_.back().insert({DNNL_ARG_BIAS, bias_memory});
-            entry_count++;
         } 
         if (has_mul) {
-            auto mul_entry = node.GetInputs()[entry_count];
+            auto mul_entry = node.GetInputs()[mul_div_entry_index];
             auto mul_memory = BindDNNLMemory(mul_entry, mul_md);
             net_args_.back().insert({DNNL_ARG_ATTR_MULTIPLE_POST_OP(0) | DNNL_ARG_SRC_1, mul_memory});
-            entry_count++;
         }
         if (has_add) {
-            auto add_entry = node.GetInputs()[entry_count];
+            auto add_entry = node.GetInputs()[add_entry_index];
             auto add_memory = BindDNNLMemory(add_entry, add_md);
             net_args_.back().insert({DNNL_ARG_ATTR_MULTIPLE_POST_OP(1) | DNNL_ARG_SRC_1, add_memory});
-            entry_count++;
         }
         BindDNNLMemory(out_entry, dst_memory);
     }
