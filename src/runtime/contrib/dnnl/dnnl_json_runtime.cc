@@ -479,23 +479,25 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
         auto mul_md = dst_md;
         auto add_md = dst_md;
         if (has_mul) {
-          auto mul_entry = node.GetInputs()[3];
-          dnnl::memory::dims mul_shape = nodes_[mul_entry.id_].GetOpShape()[mul_entry.index_];
+            auto mul_entry = node.GetInputs()[3];
+            dnnl::memory::dims mul_shape = nodes_[mul_entry.id_].GetOpShape()[mul_entry.index_];
 
-          if (mul_shape.size() == 0) {
-            mul_md = dnnl::memory::desc({{1, 1}, dt::f32, tag::nc});
-          } else if (mul_shape.size() == 3) {
-            mul_md = dnnl::memory::desc({{mul_shape[0] * mul_shape[1], mul_shape[2]}, dt::f32, tag::nc});
-          } else {
-            mul_md = dnnl::memory::desc({mul_shape, dt::f32, tag::nc});  
-          }
+            if (mul_shape.size() == 0) {
+                mul_md = dnnl::memory::desc({{1, 1}, dt::f32, tag::nc});
+            } else if (mul_shape.size() == 3) {
+                mul_md = dnnl::memory::desc({{mul_shape[0] * mul_shape[1], mul_shape[2]}, dt::f32, tag::nc});
+            } else {
+                mul_md = dnnl::memory::desc({mul_shape, dt::f32, tag::nc});  
+            }
         }
 
         if (has_add) {
             auto add_entry = node.GetInputs()[4];
             dnnl::memory::dims add_shape = nodes_[add_entry.id_].GetOpShape()[add_entry.index_];
 
-            if (add_shape.size() == 3) {
+            if (add_shape.size() == 0) {
+                add_md = dnnl::memory::desc({{1, 1}, dt::f32, tag::nc});
+            } else if (add_shape.size() == 3) {
                 add_md = dnnl::memory::desc({{add_shape[0] * add_shape[1], add_shape[2]}, dt::f32, tag::nc});
             } else {
                 add_md = dnnl::memory::desc({add_shape, dt::f32, tag::nc});
