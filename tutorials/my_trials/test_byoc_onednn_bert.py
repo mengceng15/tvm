@@ -17,6 +17,8 @@ from tvm.relay.testing.temp_op_attr import TempOpAttr
 
 from tvm.topi.utils import get_const_tuple
 
+from tvm.relay.build_module import bind_params_by_name
+
 enc = BertTokenizer.from_pretrained("bert-base-uncased")
 
 # Tokenizing input text
@@ -60,9 +62,8 @@ torch_result = traced_model(tokens_tensor, segments_tensors)
 shape_list = [(i.debugName().split('.')[0], i.type().sizes()) for i in  list(traced_model.graph.inputs())[1:]]
 mod_bert, params_bert = tvm.relay.frontend.pytorch.from_pytorch(traced_model,
                         shape_list, default_dtype="float32")
-
-# layer0_query_weight = params_bert['encoder.layer.0.attention.self.query.weight']
-# print(layer0_query_weight.numpy().reshape((12, 48, 16, 64)))
+# if params_bert:
+#     mod_bert["main"] = bind_params_by_name(mod_bert["main"], params_bert)
 
 weight_dic = {"A":"N",
               "B":"C",
@@ -153,6 +154,7 @@ def alter_special_matmul(attrs, inputs, tinfos, out_type):
 
     return relay.nn.special_matmul(data, weight, **new_attrs)
 
+# print(mod_bert)
 mod_bert = relay.transform.CanonicalizeOps()(mod_bert)
 mod_bert = relay.transform.InferType()(mod_bert)
 mod_bert = relay.transform.SimplifyInference()(mod_bert)
@@ -182,10 +184,10 @@ ctx = tvm.cpu()
 tt_a = tvm.nd.array(tokens_tensor.numpy(), ctx) #attention_mask
 st_a = tvm.nd.array(segments_tensors.numpy(), ctx) #input_ids
 with tvm.transform.PassContext(opt_level=3):
-        graph, lib, params = tvm.relay.build(mod_bert,
-                                     target=target,
-                                     target_host=target_host,
-                                     params=params_bert)
+    graph, lib, params = tvm.relay.build(mod_bert,
+                                    target=target,
+                                    target_host=target_host,
+                                    params=params_bert)
 
 module = tvm.contrib.graph_executor.create(graph, lib, ctx)
 module.set_input("input_ids", tvm.nd.array(tt_a))

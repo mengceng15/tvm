@@ -212,6 +212,7 @@ def pattern_table():
     dnnl_patterns = [conv2d_bias_sum_relu_pat, conv2d_bias_relu_pat, conv2d_bias_pat,
     #  dense_bias_relu_pat, dense_bias_pat,
      special_matmul_bias_gelu_pat, special_matmul_bias_mul_add_pat, special_matmul_bias_relu_pat,
-     special_matmul_bias_mul_pat, special_matmul_div_add_pat, special_matmul_bias_pat] #conv2d_relu_pat, 
+    # special_matmul_bias_mul_pat, special_matmul_div_add_pat, special_matmul_bias_pat] #conv2d_relu_pat,
+     special_matmul_bias_mul_pat, special_matmul_bias_pat] #conv2d_relu_pat, 
     return dnnl_patterns
     

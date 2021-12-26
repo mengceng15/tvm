@@ -21,13 +21,15 @@ enc = BertTokenizer.from_pretrained("bert-base-uncased")
 
 # Tokenizing input text
 text = "[CLS] Who was Jim Henson ? [SEP] Jim Henson was a puppeteer [SEP]"
+text = ''.join([text] * 9) # 14 * 9 = 126
+text += "pad pad" # 128
 tokenized_text = enc.tokenize(text)
 
 # Masking one of the input tokens
 masked_index = 8
 tokenized_text[masked_index] = '[MASK]'
 indexed_tokens = enc.convert_tokens_to_ids(tokenized_text)
-segments_ids = [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1]
+segments_ids = [0] * 64 + [1] * 64
 
 # Creating a dummy input
 tokens_tensor = torch.tensor([indexed_tokens])

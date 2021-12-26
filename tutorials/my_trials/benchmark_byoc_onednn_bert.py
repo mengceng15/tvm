@@ -17,17 +17,23 @@ from tvm.relay.testing.temp_op_attr import TempOpAttr
 
 from tvm.topi.utils import get_const_tuple
 
+from tvm.relay.build_module import bind_params_by_name
+
 enc = BertTokenizer.from_pretrained("bert-base-uncased")
 
 # Tokenizing input text
 text = "[CLS] Who was Jim Henson ? [SEP] Jim Henson was a puppeteer [SEP]"
+text = ''.join([text] * 9) # 14 * 9 = 126
+text += "pad pad" # 128
 tokenized_text = enc.tokenize(text)
 
 # Masking one of the input tokens
 masked_index = 8
 tokenized_text[masked_index] = '[MASK]'
 indexed_tokens = enc.convert_tokens_to_ids(tokenized_text)
-segments_ids = [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1]
+segments_ids = [0] * 64 + [1] * 64
+print(len(indexed_tokens))
+print(len(segments_ids))
 
 # Creating a dummy input
 tokens_tensor = torch.tensor([indexed_tokens])
@@ -54,15 +60,11 @@ traced_model.eval()
 for p in traced_model.parameters():
     p.requires_grad_(False)
 torch_result = traced_model(tokens_tensor, segments_tensors)
-# print("torch_result")
-# print(torch_result[0])
 
 shape_list = [(i.debugName().split('.')[0], i.type().sizes()) for i in  list(traced_model.graph.inputs())[1:]]
 mod_bert, params_bert = tvm.relay.frontend.pytorch.from_pytorch(traced_model,
                         shape_list, default_dtype="float32")
-
-# layer0_query_weight = params_bert['encoder.layer.0.attention.self.query.weight']
-# print(layer0_query_weight.numpy().reshape((12, 48, 16, 64)))
+# mod_bert["main"] = bind_params_by_name(mod_bert["main"], params_bert)
 
 weight_dic = {"A":"N",
               "B":"C",
@@ -193,6 +195,10 @@ module.set_input("attention_mask", tvm.nd.array(st_a))
 module.set_input(**params)
 module.run()
 
+# tvm_output_0 = module.get_output(0).numpy()
+# tvm_output_1 = module.get_output(1).numpy()
+# np.testing.assert_allclose(torch_result[0], tvm_output_0, rtol=1e-05, atol=1e-04)
+# np.testing.assert_allclose(torch_result[1], tvm_output_1, rtol=1e-05, atol=1e-04)
 import time
 
 def x():
