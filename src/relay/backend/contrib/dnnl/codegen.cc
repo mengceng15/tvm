@@ -435,6 +435,24 @@ class DNNLModuleCodegen : public CSourceModuleCodegenBase {
 
 #else  // DNNL JSON runtime
 
+inline const CallNode* FindCallWithName(const CallNode* current_call, int max_depth,
+                                        const std::string& root_name) {
+  ICHECK(current_call && max_depth >= 0);
+
+  if (max_depth == 0) {
+    ICHECK(current_call && IsOp(current_call, root_name));
+    return current_call;
+  }
+  if (IsOp(current_call, root_name)) {
+    return current_call;
+  }
+
+  ICHECK_GT(current_call->args.size(), 0);
+
+  const auto* next_call = current_call->args[0].as<CallNode>();
+  return FindCallWithName(next_call, max_depth - 1, root_name);
+}
+
 class DNNLJSONSerializer : public backend::contrib::JSONSerializer {
   using JSONGraphNode = tvm::runtime::json::JSONGraphNode;
   using JSONGraphNodeEntry = tvm::runtime::json::JSONGraphNodeEntry;
@@ -458,6 +476,12 @@ class DNNLJSONSerializer : public backend::contrib::JSONSerializer {
       } else if (name == "dnnl.conv2d_relu") {
         call = GetRootCall(fn->body.as<CallNode>(), 1, {"nn.conv2d", "nn.relu"});
         ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name == "dnnl.specialmatmul_biasadd") {
+        call = GetRootCall(fn->body.as<CallNode>(), 1, {"nn.special_matmul", "add"});
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if (name == "dnnl.specialmatmul_biasadd_gelu") {
+        call = FindCallWithName(fn->body.as<CallNode>(), 7, "nn.special_matmul");
+        ICHECK(call->op.as<OpNode>()) << "Not op node";  
       } else {
         LOG(FATAL) << "Unrecognized DNNL pattern: " << name;
       }

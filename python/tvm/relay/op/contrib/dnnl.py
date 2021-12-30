@@ -33,9 +33,10 @@ it is supported. For example:
 check the attributes of the op and decide if it should be offloaded to DNNL.
 """
 import tvm.ir
-from ...dataflow_pattern import wildcard, is_op
+from tvm.relay.op.nn.nn import special_matmul
+from ...dataflow_pattern import wildcard, is_op, is_expr
 from .register import register_pattern_table
-
+from tvm.relay.expr import const
 
 def _register_external_op_helper(op_name, supported=True):
     """The helper function to indicate that a given operator can be supported
@@ -65,6 +66,8 @@ _register_external_op_helper("nn.dense")
 _register_external_op_helper("nn.relu")
 _register_external_op_helper("add")
 _register_external_op_helper("multiply")
+# debug
+_register_external_op_helper("nn.special_matmul")
 
 
 def make_pattern(with_bias=True):
@@ -78,10 +81,38 @@ def make_pattern(with_bias=True):
         conv_out = conv
     return is_op("nn.relu")(conv_out)
 
+def make_specialmatmul_biasadd_pattern():
+    data = wildcard()
+    weight = wildcard()
+    bias = wildcard()
+    matmul = is_op("nn.special_matmul")(data, weight)
+    bias_add = is_op("add")(matmul, bias)
+    return bias_add
+
+def make_specialmatmul_biasadd_gelu_pattern():
+    data = wildcard()
+    weight = wildcard()
+    bias = wildcard()
+    matmul = is_op("nn.special_matmul")(data, weight)
+    bias_add = is_op("add")(matmul, bias)
+    const1 = is_expr(const(1.41421))
+    const2 = is_expr(const(0.5))
+    const3 = is_expr(const(1.0))
+    div = is_op("divide")(bias_add, const1)
+    erf = is_op("erf")(div)
+    mul = is_op("multiply")(bias_add, const2)
+    add = is_op("add")(erf, const3)
+    mul2 = is_op("multiply")(mul, add)
+    return mul2
 
 @register_pattern_table("dnnl")
 def pattern_table():
     conv2d_bias_relu_pat = ("dnnl.conv2d_bias_relu", make_pattern(with_bias=True))
     conv2d_relu_pat = ("dnnl.conv2d_relu", make_pattern(with_bias=False))
-    dnnl_patterns = [conv2d_bias_relu_pat, conv2d_relu_pat]
+    specialmatmul_biasadd_pat = ("dnnl.specialmatmul_biasadd",
+     make_specialmatmul_biasadd_pattern())
+    specialmatmul_biasadd_gelu_pat = ("dnnl.specialmatmul_biasadd_gelu",
+     make_specialmatmul_biasadd_gelu_pattern())
+    dnnl_patterns = [conv2d_bias_relu_pat, conv2d_relu_pat, 
+     specialmatmul_biasadd_gelu_pat, specialmatmul_biasadd_pat]
     return dnnl_patterns

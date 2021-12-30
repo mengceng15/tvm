@@ -18,50 +18,40 @@
 """MXNet symbol frontend."""
 import json
 import math
-
 import numpy as np
 import tvm
-from tvm import relay
 from tvm.ir import IRModule
-from tvm.topi.utils import get_const_tuple
 
-from ... import nd as _nd
+from tvm import relay
+from tvm.topi.utils import get_const_tuple
 from .. import analysis
 from .. import expr as _expr
 from .. import function as _function
 from .. import op as _op
 from .. import scope_builder as _scope_builder
+from ... import nd as _nd
+
 from .common import StrAttrsDict
-from .common import get_name as _get_name
-from .common import infer_shape as _infer_shape
 from .common import infer_type as _infer_type
+from .common import infer_shape as _infer_shape
 from .common import infer_value as _infer_value
+from .common import get_name as _get_name
+from .nnvm_common import _rename, _binop_scalar, _rbinop_scalar, _reduce
+from .nnvm_common import _arg_reduce, _init_op, _softmax_op, _cast
+from .nnvm_common import _clip, _transpose, _upsampling
+from .nnvm_common import _elemwise_sum, _reshape
+from .nnvm_common import _warn_not_used
 from .mxnet_qnn_op_utils import (
-    dequantize_mxnet_min_max,
-    get_conv_mkldnn_requantized_scale_outDtype,
-    get_mkldnn_int8_scale,
-    get_mkldnn_requantize_scale_outDtype,
-    get_mkldnn_uint8_scale,
-    quantize_conv_bias_mkldnn_from_var,
-    quantize_conv_weights_bias_channel_mkldnn_from_var,
     quantize_mxnet_min_max,
+    quantize_conv_weights_bias_channel_mkldnn_from_var,
+    quantize_conv_bias_mkldnn_from_var,
+    get_conv_mkldnn_requantized_scale_outDtype,
+    dequantize_mxnet_min_max,
+    get_mkldnn_int8_scale,
+    get_mkldnn_uint8_scale,
+    get_mkldnn_requantize_scale_outDtype,
 )
-from .nnvm_common import (
-    _arg_reduce,
-    _binop_scalar,
-    _cast,
-    _clip,
-    _elemwise_sum,
-    _init_op,
-    _rbinop_scalar,
-    _reduce,
-    _rename,
-    _reshape,
-    _softmax_op,
-    _transpose,
-    _upsampling,
-    _warn_not_used,
-)
+
 
 __all__ = ["from_mxnet"]
 
@@ -83,16 +73,24 @@ def _mx_fully_connected(inputs, attrs):
     if has_flatten and use_flatten:
         inputs[0] = _op.nn.batch_flatten(inputs[0])
     data_shape = _infer_type(inputs[0]).checked_type.shape
-    if len(data_shape) > 2:
-        inputs[0] = _op.reverse_reshape(inputs[0], [-1, 0])
+    # debug
+    # if len(data_shape) > 2:
+    #     inputs[0] = _op.reverse_reshape(inputs[0], [-1, 0])
+    # res = _op.nn.dense(inputs[0], inputs[1], units=units)
     res = _op.nn.dense(inputs[0], inputs[1], units=units)
+    if len(data_shape) > 2:
+        if len(data_shape) == 3:
+            res = _op.nn.special_matmul(inputs[0], inputs[1], "NCHW", False)
+    # debug
     if use_bias:
         assert len(inputs) == 3
-        res = _op.nn.bias_add(res, inputs[2], axis=-1)
+        # res = _op.nn.bias_add(res, inputs[2], axis=-1)
+        res = _op.add(res, inputs[2])
     if len(data_shape) > 2:
-        new_shape = data_shape[:-1]
-        new_shape.append(units)
-        res = _op.reshape(res, new_shape)
+        if len(data_shape) != 3:
+            new_shape = data_shape[:-1]
+            new_shape.append(units)
+            res = _op.reshape(res, new_shape)
     return res
 
 
@@ -339,7 +337,7 @@ def _mx_conv2d_transpose(inputs, attrs):
     if "kernel_layout" in attrs.attrs:
         kernel_layout = attrs.get_str("kernel_layout")
     else:
-        kernel_layout = "HWIO" if data_layout == "NHWC" else "IOHW"
+        kernel_layout = "HWIO" if data_layout == "NHWC" else "OIHW"
 
     new_attrs = {}
     new_attrs["channels"] = attrs.get_int("num_filter")
