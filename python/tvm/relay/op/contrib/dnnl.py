@@ -38,6 +38,8 @@ from ...dataflow_pattern import wildcard, is_op, is_expr
 from .register import register_pattern_table
 from tvm.relay.expr import const
 
+import math
+
 def _register_external_op_helper(op_name, supported=True):
     """The helper function to indicate that a given operator can be supported
     by DNNL.
@@ -60,12 +62,12 @@ def _register_external_op_helper(op_name, supported=True):
     return _func_wrapper
 
 
-_register_external_op_helper("nn.batch_norm")
+# _register_external_op_helper("nn.batch_norm")
 _register_external_op_helper("nn.conv2d")
 _register_external_op_helper("nn.dense")
 _register_external_op_helper("nn.relu")
-_register_external_op_helper("add")
-_register_external_op_helper("multiply")
+# _register_external_op_helper("add")
+# _register_external_op_helper("multiply")
 # debug
 _register_external_op_helper("nn.special_matmul")
 
@@ -95,7 +97,7 @@ def make_specialmatmul_biasadd_gelu_pattern():
     bias = wildcard()
     matmul = is_op("nn.special_matmul")(data, weight)
     bias_add = is_op("add")(matmul, bias)
-    const1 = is_expr(const(1.41421))
+    const1 = is_expr(const(math.sqrt(2)))
     const2 = is_expr(const(0.5))
     const3 = is_expr(const(1.0))
     div = is_op("divide")(bias_add, const1)
@@ -114,5 +116,6 @@ def pattern_table():
     specialmatmul_biasadd_gelu_pat = ("dnnl.specialmatmul_biasadd_gelu",
      make_specialmatmul_biasadd_gelu_pattern())
     dnnl_patterns = [conv2d_bias_relu_pat, conv2d_relu_pat, 
-     specialmatmul_biasadd_gelu_pat, specialmatmul_biasadd_pat]
+    #  specialmatmul_biasadd_gelu_pat,
+     specialmatmul_biasadd_pat]
     return dnnl_patterns

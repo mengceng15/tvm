@@ -80,7 +80,7 @@ def _mx_fully_connected(inputs, attrs):
     res = _op.nn.dense(inputs[0], inputs[1], units=units)
     if len(data_shape) > 2:
         if len(data_shape) == 3:
-            res = _op.nn.special_matmul(inputs[0], inputs[1], "NCHW", False)
+            res = _op.nn.special_matmul(inputs[0], inputs[1])
     # debug
     if use_bias:
         assert len(inputs) == 3
