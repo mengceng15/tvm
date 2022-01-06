@@ -25,13 +25,17 @@ enc = BertTokenizer.from_pretrained("bert-base-uncased")
 
 # Tokenizing input text
 text = "[CLS] Who was Jim Henson ? [SEP] Jim Henson was a puppeteer [SEP]"
+text = ''.join([text] * 9) # 14 * 9 = 126
+text += "pad pad" # 128
 tokenized_text = enc.tokenize(text)
 
 # Masking one of the input tokens
-masked_index = 8
+masked_index = 65
 tokenized_text[masked_index] = '[MASK]'
 indexed_tokens = enc.convert_tokens_to_ids(tokenized_text)
-segments_ids = [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1]
+segments_ids = [0] * 64 + [1] * 64
+print(len(indexed_tokens))
+print(len(segments_ids))
 
 # Creating a dummy input
 tokens_tensor = torch.tensor([indexed_tokens])
@@ -218,6 +222,17 @@ def get_tuning_option(network, batch_size, dtype, target, log_file):
                 ),
             }
         else:
+            tuning_option = {
+                "log_filename": log_file,
+                "tuner": "ga",
+                "n_trial": 1500,
+                "early_stopping": 600,
+                "use_transfer_learning": False,
+                "measure_option": autotvm.measure_option(
+                    builder=autotvm.LocalBuilder(timeout=10),
+                    runner=autotvm.LocalRunner(number=10, repeat=1, min_repeat_ms=1000),
+                ),
+            }
             # tuning_option = {
             #     "log_filename": log_file,
             #     "tuner": "xgb",
@@ -229,17 +244,17 @@ def get_tuning_option(network, batch_size, dtype, target, log_file):
             #         runner=autotvm.LocalRunner(number=10, repeat=1, min_repeat_ms=1000),
             #     ),
             # }
-            tuning_option = {
-                "log_filename": log_file,
-                "tuner": "random",
-                "n_trial": 1300,
-                "early_stopping": None,
-                "use_transfer_learning": False,
-                "measure_option": autotvm.measure_option(
-                    builder=autotvm.LocalBuilder(timeout=10),
-                    runner=autotvm.LocalRunner(number=10, repeat=1, min_repeat_ms=1000),
-                ),
-            }
+            # tuning_option = {
+            #     "log_filename": log_file,
+            #     "tuner": "random",
+            #     "n_trial": 1300,
+            #     "early_stopping": None,
+            #     "use_transfer_learning": False,
+            #     "measure_option": autotvm.measure_option(
+            #         builder=autotvm.LocalBuilder(timeout=10),
+            #         runner=autotvm.LocalRunner(number=10, repeat=1, min_repeat_ms=1000),
+            #     ),
+            # }
     else:
         tuning_option = {
             "log_filename": log_file,
