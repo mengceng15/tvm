@@ -213,7 +213,7 @@ def pattern_table():
             dnnl_patterns.append(make_dnnl_pattern("conv2d", with_bias, elt))
             dnnl_patterns.append(make_dnnl_pattern("dense", with_bias, elt))
             dnnl_patterns.append(make_specialmatmul_biasadd_pattern())
-            dnnl_patterns.append(make_specialmatmul_biasadd_gelu_pattern)
+            dnnl_patterns.append(make_specialmatmul_biasadd_gelu_pattern())
     return dnnl_patterns
 
 

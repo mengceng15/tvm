@@ -19,5 +19,8 @@
 
 from . import _ffi_api
 
+def AutoQuery_batch_matmul(B, M, K, N):
+    return _ffi_api.AutoQuery_batch_matmul(B, M, K, N)  # type: ignore
+
 def AutoQuery_innerproduct(B, IC, OC):
     return _ffi_api.AutoQuery_innerproduct(B, IC, OC)  # type: ignore

@@ -341,9 +341,9 @@ bool SpecialMatmulRel(const Array<Type>& types, int num_inputs, const Attrs& att
 
   Array<tvm::PrimExpr> oshape = data->shape;
   if(param->is_batch_matmul) { // Batch matmul
-    ICHECK_EQ(data->shape.size(), 4) << "Only 4D data is supported for batch matmul";
-    auto oc = weight->shape[3];
-    oshape.Set(3, oc);
+    ICHECK_EQ(data->shape.size(), 3) << "Only 3D data is supported for batch matmul";
+    auto oc = weight->shape[2];
+    oshape.Set(2, oc);
   } else { // Normal 3d x 2D
     ICHECK_EQ(data->shape.size(), 3) << "Only 3D data is supported";
     auto oc = weight->shape.size() == 2 ? weight->shape[0] :
@@ -366,11 +366,11 @@ InferCorrectLayoutOutput SpecialMatmulInferCorrectLayout(const Attrs& attrs,
                                                      const Array<tvm::relay::Type>& old_in_types) {
   auto params = attrs.as<SpecialMatmulAttrs>();
   ICHECK(params);
-  if(params->is_batch_matmul) {
-    return InferCorrectLayoutOutput({"NCHW", params->weight_layout}, {"NCHW"}, attrs);
-  } else {
-    return InferCorrectLayoutOutput({"NCW", params->weight_layout}, {"NCW"}, attrs);
-  }
+//   if(params->is_batch_matmul) {
+    return InferCorrectLayoutOutput({"NCH", params->weight_layout}, {"NCH"}, attrs);
+//   } else {
+//     return InferCorrectLayoutOutput({"NCW", params->weight_layout}, {"NCW"}, attrs);
+//   }
 }
 
 RELAY_REGISTER_OP("nn.special_matmul")
@@ -380,7 +380,7 @@ RELAY_REGISTER_OP("nn.special_matmul")
     .set_attrs_type<SpecialMatmulAttrs>()
     .set_num_inputs(2)
     .add_argument("data", "3D Tensor", "Input data.")
-    .add_argument("weight", "4D Tensor", "Packed weight matrix.")
+    .add_argument("weight", "3D Tensor", "Packed weight matrix.")
     .set_support_level(10)
     .set_attr<FInferCorrectLayout>("FInferCorrectLayout", SpecialMatmulInferCorrectLayout)
     .add_type_rel("SpecialMatmul", SpecialMatmulRel);
