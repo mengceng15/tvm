@@ -147,6 +147,8 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
           Conv2d(nid, true, true, dnnl::algorithm::eltwise_tanh);
         } else if ("dnnl.conv2d_bias_sigmoid" == op_name) {
           Conv2d(nid, true, true, dnnl::algorithm::eltwise_logistic);
+        } else if ("nn.batch_matmul" == op_name) {
+          BatchMatmul(nid);
         } else if ("nn.special_matmul" == op_name) {
           SpecialMatmul(nid);  
         } else if ("dnnl.specialmatmul_biasadd" == op_name) {
@@ -304,6 +306,70 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
                          {DNNL_ARG_WEIGHTS, conv2d_weights_memory},
                          {DNNL_ARG_BIAS, conv2d_bias_memory},
                          {DNNL_ARG_DST, conv2d_dst_memory}});
+  }
+
+  void BatchMatmul(const size_t& nid) {
+    auto node = nodes_[nid];
+    int data_entry_index = 0;
+    int weight_entry_index = 1;
+
+    // Setup attributes.
+    auto data_entry = node.GetInputs()[data_entry_index];
+    auto weight_entry = node.GetInputs()[weight_entry_index];
+    dnnl::memory::dims input_shape = nodes_[data_entry.id_].GetOpShape()[data_entry.index_];
+    dnnl::memory::dims weight_shape = nodes_[weight_entry.id_].GetOpShape()[weight_entry.index_];
+    auto weight_df = layout_dict[node.GetAttr<std::vector<std::string>>("weight_layout")[0]];
+
+    dnnl::memory::dim B = input_shape[0],
+        M = input_shape[1],
+        K = input_shape[2],
+        N = weight_shape[1];
+
+    dnnl::memory::dims trans_src_dims = {B, N, K};
+    // dnnl::memory::dims trans_dst_dims = {B, K, N};
+    // std::cout << "B, M, K, N: " << B << " " << M << " " << K << " " << N << std::endl;
+    auto trans_src_md = dnnl::memory::desc(trans_src_dims, dt::f32, tag::ncw);
+    auto trans_dst_md = dnnl::memory::desc(trans_src_dims, dt::f32, tag::nwc);
+
+    auto pre_weight_memory = BindDNNLMemory(weight_entry, trans_src_md);
+    auto weight_memory = dnnl::memory(trans_dst_md, engine_);
+
+    auto reorder_pd = dnnl::reorder::primitive_desc(
+            engine_, trans_src_md, engine_, trans_dst_md);
+    // std::cout << "pd built" << std::endl;
+    auto reorder_prim = dnnl::reorder(reorder_pd);
+    net_.push_back(reorder_prim);
+
+    net_args_.push_back({{DNNL_ARG_SRC, pre_weight_memory},
+                {DNNL_ARG_DST, weight_memory}});
+    
+    // Memory_shapes.
+    dnnl::memory::dims data_dims = {B, M, K};
+    dnnl::memory::dims weight_dims = {B, K, N};
+    dnnl::memory::dims out_dims = {B, M, N};
+    // std::cout << "B, M, K, N: " << B << " " << M << " " << K << " " << N << std::endl;
+
+    // Memory descriptions.
+    auto data_md = dnnl::memory::desc({data_dims, dt::f32, tag::ncw});
+    auto weight_md = dnnl::memory::desc({weight_dims, dt::f32, weight_df});
+    auto dst_md = dnnl::memory::desc({out_dims, dt::f32, tag::ncw});
+    auto matmul_desc = dnnl::matmul::desc(data_md, weight_md, dst_md);
+
+    auto matmul_prim_desc = dnnl::matmul::primitive_desc(matmul_desc, engine_);
+    auto matmul = dnnl::matmul(matmul_prim_desc);
+    net_.push_back(matmul);
+
+    // Memories.
+    auto data_memory = BindDNNLMemory(data_entry, data_md);
+    // auto weight_memory = BindDNNLMemory(weight_entry, weight_md);
+    auto dst_memory = dnnl::memory(dst_md, engine_);
+    JSONGraphNodeEntry out_entry(nid, 0);
+
+    net_args_.push_back({{DNNL_ARG_SRC, data_memory},
+                {DNNL_ARG_WEIGHTS, weight_memory},
+                {DNNL_ARG_DST, dst_memory}});
+
+    BindDNNLMemory(out_entry, dst_memory);
   }
 
   void SpecialMatmul(const size_t& nid,

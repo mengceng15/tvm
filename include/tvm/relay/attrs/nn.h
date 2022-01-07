@@ -1128,6 +1128,7 @@ struct BatchMatmulAttrs : public tvm::AttrsNode<BatchMatmulAttrs> {
   DataType out_dtype;
   bool transpose_a;
   bool transpose_b;
+  tvm::String weight_layout;
   tvm::String auto_scheduler_rewritten_layout;  // The layout after auto-scheduler's layout rewrite
 
   TVM_DECLARE_ATTRS(BatchMatmulAttrs, "relay.attrs.BatchMatmulAttrs") {
@@ -1143,6 +1144,10 @@ struct BatchMatmulAttrs : public tvm::AttrsNode<BatchMatmulAttrs> {
     TVM_ATTR_FIELD(transpose_b)
         .set_default(false)
         .describe("Whether the second input tensor is in transposed format.");
+
+    TVM_ATTR_FIELD(weight_layout)
+        .set_default("NCH")
+        .describe("the layout of the weight.");
   }
 };
 

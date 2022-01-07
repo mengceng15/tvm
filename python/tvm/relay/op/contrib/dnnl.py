@@ -74,6 +74,7 @@ _register_external_op_helper("nn.dense")
 _register_external_op_helper("nn.relu")
 
 _register_external_op_helper("nn.special_matmul")
+_register_external_op_helper("nn.batch_matmul")
 _register_external_op_helper("tanh")
 _register_external_op_helper("sigmoid")
 # debug
@@ -204,7 +205,8 @@ def pattern_table():
     dnnl_patterns : List[dnnl_pattern]
         Created patterns.
     """
-    elt_list = ["nn.relu", "tanh", "sigmoid", None]
+    # elt_list = ["nn.relu", "tanh", "sigmoid", None]
+    elt_list = ["nn.relu", "sigmoid", None]
     dnnl_patterns = []
     for with_bias in [True, False]:
         for elt in elt_list:

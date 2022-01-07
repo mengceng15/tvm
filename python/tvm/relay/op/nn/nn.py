@@ -2229,7 +2229,8 @@ def group_norm(data, gamma, beta, num_groups, axis=1, epsilon=1e-5, center=True,
     return _make.group_norm(data, gamma, beta, num_groups, axis, epsilon, center, scale)
 
 
-def batch_matmul(tensor_a, tensor_b, out_dtype="", transpose_a=False, transpose_b=True):
+def batch_matmul(tensor_a, tensor_b, out_dtype="", transpose_a=False, transpose_b=True,
+ weight_layout="NCH"):
     r"""
     Compute batch matrix multiplication of `tensor_a` and `tensor_b`.
 
@@ -2262,7 +2263,8 @@ def batch_matmul(tensor_a, tensor_b, out_dtype="", transpose_a=False, transpose_
     result: tvm.relay.Expr
         The computed result.
     """
-    return _make.batch_matmul(tensor_a, tensor_b, out_dtype, transpose_a, transpose_b)
+    return _make.batch_matmul(tensor_a, tensor_b, out_dtype, transpose_a, transpose_b,
+     weight_layout)
 
 
 # pylint: disable=no-else-return,inconsistent-return-statements

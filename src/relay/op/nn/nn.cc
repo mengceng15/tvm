@@ -1072,11 +1072,12 @@ TVM_REGISTER_NODE_TYPE(BatchMatmulAttrs);
 
 // Positional relay function to create batch_matmul operator used by frontend FFI.
 Expr MakeBatchMatmul(Expr tensor_a, Expr tensor_b, DataType out_dtype, bool transpose_a,
-                     bool transpose_b) {
+                     bool transpose_b, tvm::String weight_layout) {
   auto attrs = make_object<BatchMatmulAttrs>();
   attrs->out_dtype = out_dtype;
   attrs->transpose_a = transpose_a;
   attrs->transpose_b = transpose_b;
+  attrs->weight_layout = weight_layout;
   static const Op& op = Op::Get("nn.batch_matmul");
   return Call(op, {tensor_a, tensor_b}, Attrs(attrs), {});
 }

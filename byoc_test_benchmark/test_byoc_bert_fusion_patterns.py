@@ -76,6 +76,55 @@ def alter_special_matmul(attrs, inputs, tinfos, out_type):
 
     return relay.nn.special_matmul(data, weight, **new_attrs)
 
+
+@relay.op.register_alter_op_layout("nn.batch_matmul", level=114)
+def alter_batch_matmul(attrs, inputs, tinfos, out_type):
+    new_attrs = dict(attrs)
+
+    data, weight = inputs
+    data_tensor, weight_tensor = tinfos
+
+    print(data_tensor.shape)
+    print(weight_tensor.shape)
+    B, M, K = get_const_tuple(data_tensor.shape)
+    _, N, _ = get_const_tuple(weight_tensor.shape)
+    res = relay.query_layout.AutoQuery_batch_matmul(B, M, K, N)
+
+    print("queried weight layout:", res)
+
+    _, weight_df, _ = res.split(',')
+
+    def trans_data(input_data):
+        dic = weight_dic
+        input_str = [c for c in input_data]
+        output_list = []
+
+        for c in input_str:
+            if c in dic.keys():
+                output_list += dic[c]
+            else:
+                output_list += c
+
+        all_lower_case = True
+        for c in output_list:
+            if c == c.upper():
+                all_lower_case = False
+                break
+
+        if all_lower_case:
+            for i in range(len(output_list)):
+                output_list[i] = output_list[i].upper()
+
+        output_str = ""
+        for c in output_list:
+            output_str += c
+
+        return output_str
+    print("translated weight layout:", trans_data(weight_df))
+    new_attrs['weight_layout'] = trans_data(weight_df)
+
+    return relay.nn.batch_matmul(data, weight, **new_attrs)
+
 def dense_example():
     x = relay.var("x", relay.TensorType((128, 2, 768), "float32"))
     y = relay.var("y", relay.TensorType((2304, 768), "float32"))
@@ -165,8 +214,9 @@ def check_correctness(func):
 
 def dense_batch_matmul_example():
     x = relay.var("x", relay.TensorType((12, 14, 16), "float32"))
-    y = relay.var("y", relay.TensorType((12, 16, 64), "float32"))
-    matmul0 = nn.special_matmul(x, y, "NCH", is_batch_matmul=True)
+    y = relay.var("y", relay.TensorType((12, 64, 16), "float32"))
+    # matmul0 = nn.special_matmul(x, y, "NCH", is_batch_matmul=True)
+    matmul0 = nn.batch_matmul(x, y)
 
     return relay.Function([x, y], matmul0)
 
@@ -183,7 +233,7 @@ def check_batch_matmul_correctness(func):
     mod = relay.transform.FoldConstant()(mod)
     mod = relay.transform.FoldScaleAxis()(mod)
     mod = relay.transform.FoldConstant()(mod)
-    with TempOpAttr("nn.special_matmul", "FTVMAlterOpLayout", alter_special_matmul):
+    with TempOpAttr("nn.batch_matmul", "FTVMAlterOpLayout", alter_batch_matmul):
         mod = relay.transform.AlterOpLayout()(mod)
     print(mod)
     mod = relay.transform.FoldConstant()(mod)
@@ -201,9 +251,10 @@ def check_batch_matmul_correctness(func):
     datay = np.random.uniform(size=(12, 16, 64)) - 0.5
 
     rt_mod.set_input("x", tvm.nd.array(datax.astype("float32")))
-    rt_mod.set_input("y", tvm.nd.array(datay.astype("float32")))
+    rt_mod.set_input("y", tvm.nd.array(datay.transpose((0, 2, 1)).astype("float32")))
     rt_mod.run()
     tvm_output = rt_mod.get_output(0).numpy()
+    print(tvm_output)
 
     ans = np.matmul(datax, datay)
     np.testing.assert_allclose(ans, tvm_output, rtol=1e-05, atol=1e-05)
