@@ -96,6 +96,7 @@ def alter_batch_matmul(attrs, inputs, tinfos, out_type):
     B, M, K = get_const_tuple(data_tensor.shape)
     _, N, _ = get_const_tuple(weight_tensor.shape)
     res = relay.query_layout.AutoQuery_batch_matmul(B, M, K, N)
+    # print("queried weight layout:", res)
 
     _, weight_df, _ = res.split(',')
 
@@ -178,41 +179,26 @@ mod = relay.transform.PartitionGraph()(mod)
 target = 'llvm'
 
 with tvm.transform.PassContext(opt_level=3):
-    lib = relay.build(mod, target=target, params=params)
+    json, lib, params = relay.build(mod, target=target, params=params)
 
 ctx = tvm.cpu(0)
-module = runtime.GraphModule(lib["default"](ctx))
 
 # Feed input data
 data = np.random.uniform(size=input_shape[0])
 token_types = np.random.uniform(size=input_shape[1])
 valid_length = np.array([seq_length] * batch_size)
-module.set_input(data0=data, data1=token_types, data2=valid_length)
-# module.set_input(**params)
-# module.run()
-# tvm_output_0 = module.get_output(0).numpy()
-# tvm_output_1 = module.get_output(1).numpy()
-# seq_encoding, cls_encoding  = model(mx.nd.array(data), mx.nd.array(token_types), mx.nd.array(valid_length))
-# np.testing.assert_allclose(seq_encoding.asnumpy(), tvm_output_0, rtol=1e-04, atol=1e-04)
-# np.testing.assert_allclose(cls_encoding.asnumpy(), tvm_output_1, rtol=1e-04, atol=1e-04)
-# print(tvm_output_0)
-# print(seq_encoding.asnumpy())
 
-# print(tvm_output_1)
-# print(cls_encoding.asnumpy())
+import datetime
+tic = datetime.datetime.now()
+from tvm.contrib.debugger import debug_executor as graph_executor
+rt_mod = graph_executor.create(json, lib, ctx)#, dump_root="/home/zy/tvm/tutorials/experiment_res/")#Create a runtime executor module given a graph and module.
+rt_mod.set_input(data0=data, data1=token_types, data2=valid_length)
 
-import time
-
-def y():
-    for i in range(100):
-        if i == 99:
-            print("start here")
-        module.run()
-    ctx.sync()
-
-# x()
-start = time.time()
-y()
-end = time.time()
-print("time:", (end-start)/100)
+warmup=10
+batches=40
+total_time_lst = []
+for i in range(batches+warmup):
+    tmp = rt_mod.profile()
+    if i == batches+warmup-1:
+        print(tmp)
 
