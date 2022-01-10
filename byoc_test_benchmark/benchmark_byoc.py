@@ -176,7 +176,7 @@ mod = relay.transform.MergeCompilerRegions()(mod)
 mod = relay.transform.PartitionGraph()(mod)
 # print(mod)
 
-target = 'llvm'
+target = "llvm -mcpu=cascadelake"
 
 with tvm.transform.PassContext(opt_level=3):
     json, lib, params = relay.build(mod, target=target, params=params)
@@ -191,11 +191,11 @@ valid_length = np.array([seq_length] * batch_size)
 import datetime
 tic = datetime.datetime.now()
 from tvm.contrib.debugger import debug_executor as graph_executor
-rt_mod = graph_executor.create(json, lib, ctx)#, dump_root="/home/zy/tvm/tutorials/experiment_res/")#Create a runtime executor module given a graph and module.
+rt_mod = graph_executor.create(json, lib, ctx)
 rt_mod.set_input(data0=data, data1=token_types, data2=valid_length)
 
-warmup=10
-batches=40
+warmup=100
+batches=300
 total_time_lst = []
 for i in range(batches+warmup):
     tmp = rt_mod.profile()
