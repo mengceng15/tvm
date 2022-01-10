@@ -179,26 +179,44 @@ mod = relay.transform.PartitionGraph()(mod)
 target = "llvm -mcpu=cascadelake"
 
 with tvm.transform.PassContext(opt_level=3):
-    json, lib, params = relay.build(mod, target=target, params=params)
+    lib = relay.build(mod, target=target, params=params)
 
 ctx = tvm.cpu(0)
+module = runtime.GraphModule(lib["default"](ctx))
 
 # Feed input data
 data = np.random.uniform(size=input_shape[0])
 token_types = np.random.uniform(size=input_shape[1])
 valid_length = np.array([seq_length] * batch_size)
+module.set_input(data0=data, data1=token_types, data2=valid_length)
+module.set_input(**params)
+module.run()
+tvm_output_0 = module.get_output(0).numpy()
+tvm_output_1 = module.get_output(1).numpy()
+seq_encoding, cls_encoding  = model(mx.nd.array(data), mx.nd.array(token_types), mx.nd.array(valid_length))
+np.testing.assert_allclose(seq_encoding.asnumpy(), tvm_output_0, rtol=1e-04, atol=1e-04)
+np.testing.assert_allclose(cls_encoding.asnumpy(), tvm_output_1, rtol=1e-04, atol=1e-04)
+print(tvm_output_0)
+print(seq_encoding.asnumpy())
 
-import datetime
-tic = datetime.datetime.now()
-from tvm.contrib.debugger import debug_executor as graph_executor
-rt_mod = graph_executor.create(json, lib, ctx)
-rt_mod.set_input(data0=data, data1=token_types, data2=valid_length)
+print(tvm_output_1)
+print(cls_encoding.asnumpy())
 
-warmup=100
-batches=300
-total_time_lst = []
-for i in range(batches+warmup):
-    tmp = rt_mod.profile()
-    if i == batches+warmup-1:
-        print(tmp)
+import time
+
+def warmup():
+    for i in range(200):
+        module.run()
+    ctx.sync()
+
+def y():
+    for i in range(1000):
+        module.run()
+    ctx.sync()
+
+warmup()
+start = time.time()
+y()
+end = time.time()
+print("time:", (end-start)/1000)
 
