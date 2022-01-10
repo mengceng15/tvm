@@ -73,8 +73,8 @@ def _mx_fully_connected(inputs, attrs):
     if has_flatten and use_flatten:
         inputs[0] = _op.nn.batch_flatten(inputs[0])
     data_shape = _infer_type(inputs[0]).checked_type.shape
-    weight_shape = _infer_type(inputs[1]).checked_type.shape
     # debug
+    weight_shape = _infer_type(inputs[1]).checked_type.shape
     res = _op.nn.dense(inputs[0], inputs[1], units=units)
     if len(data_shape) > 2:
         if len(data_shape) == 3 and len(weight_shape) == 2:

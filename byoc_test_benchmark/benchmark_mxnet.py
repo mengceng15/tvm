@@ -2,7 +2,7 @@ import mxnet as mx
 import gluonnlp
 import numpy as np
 
-batch_size = 2
+batch_size = 1
 seq_length = 128
 
 # Instantiate a BERT classifier using GluonNLP
