@@ -1509,22 +1509,6 @@ def _mx_contrib_interleaved_matmul_selfatt_qk(inputs, attrs):
     k_proj = _op.transpose(k_proj, axes=[1, 2, 0, 3])
     k_proj = _op.reverse_reshape(k_proj, newshape=(-1, 0, 0))
     ret = _op.nn.batch_matmul(q_proj, k_proj)
-    # debug
-    # assert len(inputs) == 1
-    # qkv = inputs[0]
-    # num_heads = attrs.get_int("heads")
-    # qkv = _op.reshape(qkv, newshape=(0, 0, num_heads, 3, -1))
-    # q_proj = _op.take(qkv, _expr.const(0, "int32"), axis=3)
-    # q_proj = _op.transpose(q_proj, axes=[1, 2, 0, 3])
-    # q_proj = _op.reverse_reshape(q_proj, newshape=(-1, 0, 0))
-    # q_proj = _mx_contrib_div_sqrt_dim([q_proj], None)
-
-    # k_proj = _op.take(qkv, _expr.const(1, "int32"), axis=3)
-    # k_proj = _op.transpose(k_proj, axes=[1, 2, 0, 3])
-    # k_proj = _op.reverse_reshape(k_proj, newshape=(-1, 0, 0))
-    # k_proj = _op.transpose(k_proj, axes=[0, 2, 1])
-
-    # ret = _op.nn.special_matmul(q_proj, k_proj, weight_layout="NCH", is_batch_matmul=True)
     return ret
 
 
@@ -1550,20 +1534,6 @@ def _mx_contrib_interleaved_matmul_selfatt_valatt(inputs, attrs):
     out = _op.reverse_reshape(out, newshape=(-1, num_heads, 0, 0))
     out = _op.transpose(out, axes=(2, 0, 1, 3))
     out = _op.reshape(out, newshape=(0, 0, -1))
-    # debug
-    # assert len(inputs) == 2
-    # qkv, att = inputs
-    # num_heads = attrs.get_int("heads")
-    # qkv = _op.reshape(qkv, newshape=(0, 0, num_heads, 3, -1))
-    # v_proj = _op.take(qkv, _expr.const(2, "int32"), axis=3)
-    # v_proj = _op.transpose(v_proj, axes=(1, 2, 0, 3))
-    # v_proj = _op.reverse_reshape(v_proj, newshape=(-1, 0, 0))
-    # # v_proj = _op.transpose(v_proj, axes=[0, 2, 1])
-    # # out = _op.nn.batch_matmul(att, v_proj)
-    # out = _op.nn.special_matmul(att, v_proj, weight_layout="NCH", is_batch_matmul=True)
-    # out = _op.reverse_reshape(out, newshape=(-1, num_heads, 0, 0))
-    # out = _op.transpose(out, axes=(2, 0, 1, 3))
-    # out = _op.reshape(out, newshape=(0, 0, -1))
     return out
 
 

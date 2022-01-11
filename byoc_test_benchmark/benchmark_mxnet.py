@@ -32,10 +32,15 @@ valid_length = np.array([seq_length] * batch_size)
 
 import time
 
+def warmup():
+    for i in range(200):
+        model(mx.nd.array(data), mx.nd.array(token_types), mx.nd.array(valid_length))
+
 def x():
     for i in range(1000):
         model(mx.nd.array(data), mx.nd.array(token_types), mx.nd.array(valid_length))
 
+warmup()
 start = time.time()
 x()
 end = time.time()
