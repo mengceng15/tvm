@@ -221,7 +221,7 @@ def benchmark(network, batch_size, dtype, target, log_file, repeat):
 network = "bert"
 batch_size = 1
 dtype = "float32"
-target = tvm.target.Target("llvm")
+target = tvm.target.Target("llvm -mcpu=cascadelake")
 logdir = "tmp_logs/"
 
 network_key = make_network_key(network, batch_size, dtype)
