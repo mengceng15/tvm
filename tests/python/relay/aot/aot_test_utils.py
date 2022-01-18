@@ -31,6 +31,8 @@ from typing import Any, NamedTuple, Union, Optional, List, Dict
 import pytest
 import numpy as np
 
+pytest.importorskip("tvm.micro")
+
 import tvm
 from tvm import relay
 from tvm import te
@@ -144,7 +146,6 @@ AOT_CORSTONE300_RUNNER = AOTTestRunner(
     uart_init();
     """,
     includes=["uart.h"],
-    parameters={"NPU_VARIANT": "256"},
     pass_config={
         "relay.ext.cmsisnn.options": {
             "mcpu": "cortex-m55",

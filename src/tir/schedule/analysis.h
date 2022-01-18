@@ -20,6 +20,7 @@
 #define TVM_TIR_SCHEDULE_ANALYSIS_H_
 
 #include <tvm/arith/analyzer.h>
+#include <tvm/ir/op.h>
 #include <tvm/tir/schedule/state.h>
 
 #include <tuple>
@@ -266,6 +267,39 @@ BlockRealize CheckGetSingleChildBlockRealizeOnSRefTree(const ScheduleState& self
  */
 BlockRealize GetBlockRealize(const ScheduleState& self, const StmtSRef& block_sref);
 
+/*!
+ * \brief Get the IterVarType of the specific loop, according to the blocks it's bound to
+ * \param loop_sref The loop to be checked
+ * \return The IterVarType of the specific loop
+ */
+IterVarType GetLoopIterType(const StmtSRef& loop_sref);
+
+/*!
+ * \brief Get the lowest common ancestor of an array of blocks or loops on the sref tree
+ * \param srefs The block srefs or loop srefs whose lowest common ancestor is to be queried
+ * \return The lowest common ancestor of the input block srefs or loop srefs
+ * \note The input array is required to have at least one sref
+ */
+StmtSRef GetSRefLowestCommonAncestor(const Array<StmtSRef>& srefs);
+
+/*!
+ * \brief Checks if the given block has been applied by multi-level tiling. We check this by
+ *        examine the block's annotation.
+ * \param block_sref The block to be checked
+ * \return A boolean indicating whether the block has been multi-level tiled.
+ */
+bool HasBeenMultiLevelTiled(const StmtSRef& block_sref);
+
+/*!
+ * \brief Collect all the feasible compute-at locations of the input block
+ * \param self The schedule state
+ * \param block_sref The block whose compute-at locations are to be collected
+ * \return All the feasible compute-at locations of the input block, given as an array of loop srefs
+ *         and an array of their indices among the outer loops of the input block
+ */
+std::pair<Array<StmtSRef>, std::vector<int>> CollectComputeLocation(const ScheduleState& self,
+                                                                    const StmtSRef& block_sref);
+
 /******** Producer-consumer relation ********/
 
 /*!
@@ -441,6 +475,50 @@ bool CanComputeAt(const ScheduleState& self, const StmtSRef& block_sref, const S
  */
 bool CanReverseComputeAt(const ScheduleState& self, const StmtSRef& block_sref,
                          const StmtSRef& loop_sref, bool preserve_unit_loops);
+
+/*!
+ * \brief Checks if the given AST contains the specific operators
+ * \param stmt The AST statement to be checked
+ * \param ops The list of operators to be checked
+ * \return A boolean indicating whether the AST contains the specific operators
+ */
+bool HasOp(const Stmt& stmt, const Array<Op>& ops);
+
+/*!
+ * \brief Checks if the given AST statement contains if-then-else, including
+ * 1) IfThenElse statement
+ * 2) Select expression
+ * 3) The operator `tir.if_then_else`
+ * 4) non-constant-true Block predicates
+ * \param stmt The AST statement to be checked
+ * \return A boolean indicating whether the statement contains the if-then-else pattern
+ */
+bool HasIfThenElse(const Stmt& stmt);
+
+/*!
+ * \brief Given the read/write region, extract the pattern of their index correspondence
+ * namely, the mapping from read index to the write index.
+ * \param read_region The read region
+ * \param write_region The write region
+ * \return A tuple of booleans, the extracted pattern
+ * 0) exists: if the pattern is found
+ * 1) surjective: if the pattern is surjective, i.e. each write index is mapped at least once
+ *    e.g. A[i, j] = B[i, i, j]
+ * 2) injective: if the pattern is injective, i.e. each write index is mapped at most once.
+ *    e.g. A[i, j] = B[i]
+ * 3) ordered: if the mapping is ordered
+ * 4) no_const_read: if there is no constant indexing in the read indices,
+ *    e.g. A[i, j] = B[0, i, j]
+ * 5) no_shift_read: if there is no constant shift in the read indices,
+ *    e.g. A[i, j] = B[i + 1, j]
+ */
+std::tuple</*exists=*/bool,
+           /*surjective=*/bool,
+           /*injective=*/bool,
+           /*ordered=*/bool,
+           /*no_const_read=*/bool,
+           /*no_shift_read=*/bool>
+AnalyzeReadWritePattern(const BufferRegion& read_region, const BufferRegion& write_region);
 
 }  // namespace tir
 }  // namespace tvm

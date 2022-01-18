@@ -646,6 +646,158 @@ BlockRealize GetBlockRealize(const ScheduleState& self, const StmtSRef& block_sr
   }
 }
 
+IterVarType GetLoopIterType(const StmtSRef& loop_sref) {
+  const ForNode* loop = TVM_SREF_TO_FOR(loop, loop_sref);
+  const Var& loop_var = loop->loop_var;
+  int n_spatial = 0;
+  int n_reduce = 0;
+  int n_other = 0;
+  auto f_visit = [&loop_var, &n_spatial, &n_reduce, &n_other](const ObjectRef& obj) -> bool {
+    if (const auto* realize = obj.as<BlockRealizeNode>()) {
+      const BlockNode* block = realize->block.get();
+      // Number of block vars and their bindings
+      ICHECK_EQ(realize->iter_values.size(), block->iter_vars.size());
+      size_t n = realize->iter_values.size();
+      for (size_t i = 0; i < n; ++i) {
+        const IterVar& iter_var = block->iter_vars[i];
+        const PrimExpr& binding = realize->iter_values[i];
+        // Categorize the current block var
+        int* ref = nullptr;
+        if (iter_var->iter_type == IterVarType::kDataPar) {
+          ref = &n_spatial;
+        } else if (iter_var->iter_type == IterVarType::kCommReduce) {
+          ref = &n_reduce;
+        } else {
+          ref = &n_other;
+        }
+        // Visit the binding to see if `loop_var` appears
+        PostOrderVisit(binding, [&ref, &loop_var](const ObjectRef& obj) -> void {
+          if (obj.same_as(loop_var)) {
+            (*ref) += 1;
+          }
+        });
+      }
+      return false;
+    }
+    return true;
+  };
+  PreOrderVisit(loop->body, f_visit);
+  if (n_other) {
+    return IterVarType::kOpaque;
+  } else if (n_spatial && n_reduce) {
+    return IterVarType::kOpaque;
+  } else if (n_reduce) {
+    return IterVarType::kCommReduce;
+  } else {
+    return IterVarType::kDataPar;
+  }
+}
+
+StmtSRef GetSRefLowestCommonAncestor(const Array<StmtSRef>& srefs) {
+  CHECK(!srefs.empty()) << "ValueError: The input array is required to have at least one sref";
+
+  std::unordered_map<const StmtSRefNode*, size_t> sref_visited_cnt;
+  for (const StmtSRef& sref : srefs) {
+    const StmtSRefNode* p = sref.get();
+    while (p != nullptr) {
+      ++sref_visited_cnt[p];
+      p = p->parent;
+    }
+  }
+  size_t n_sref = srefs.size();
+  const StmtSRefNode* p = srefs[0].get();
+  while (p != nullptr && sref_visited_cnt[p] != n_sref) {
+    p = p->parent;
+  }
+  ICHECK(p != nullptr);
+  return GetRef<StmtSRef>(p);
+}
+
+bool HasBeenMultiLevelTiled(const StmtSRef& block_sref) {
+  return tir::GetAnn<String>(block_sref, tir::attr::meta_schedule_tiling_structure).defined();
+}
+
+std::pair<Array<StmtSRef>, std::vector<int>> CollectComputeLocation(const ScheduleState& self,
+                                                                    const StmtSRef& block_sref) {
+  Array<StmtSRef> location_srefs;
+  std::vector<int> location_indices;
+
+  // Step 1. Add the "compute-root" candidate. Add the "compute-inline" candidate if the block can
+  // be inlined.
+  if (CanComputeInline(self, block_sref)) {
+    location_srefs.push_back(StmtSRef::InlineMark());
+    location_indices.push_back(-2);
+  }
+  location_srefs.push_back(StmtSRef::RootMark());
+  location_indices.push_back(-1);
+
+  // Step 2. If the block has no consumer, there is no more candidate.
+  Array<StmtSRef> consumers = GetConsumers(self, block_sref);
+  if (consumers.empty()) {
+    return std::make_pair(location_srefs, location_indices);
+  }
+
+  // Step 3. Get the deepest loop that the input block can be computed at (namely "boundary"). If
+  // such a loop cannot be found, there is no more candidate and we just return.
+  StmtSRef loop_boundary = consumers.size() > 1 ? GetSRefLowestCommonAncestor(consumers)
+                                                : GetRef<StmtSRef>(consumers[0]->parent);
+  if (loop_boundary->StmtAs<ForNode>() == nullptr) {
+    return std::make_pair(location_srefs, location_indices);
+  }
+
+  // Step 4. Collect the loops outside the first consumer and locate the boundary loop. The position
+  // of the boundary loop reveals the number of possible additional candidates.
+  Array<StmtSRef> loop_srefs = GetLoops(consumers[0]);
+  size_t lca_pos =
+      std::find(loop_srefs.begin(), loop_srefs.end(), loop_boundary) - loop_srefs.begin();
+  ICHECK_LT(lca_pos, loop_srefs.size());
+  size_t n_candidate = lca_pos + 1;
+
+  // Step 5. Find the position of the deepest data-parallel loop among the candidate loops. This
+  // position is used for removing the unwanted candidates from the perspective of performance.
+  std::vector<IterVarType> loop_iter_types;
+  loop_iter_types.reserve(n_candidate);
+  int i_last_datapar = -1;
+  for (size_t i = 0; i < n_candidate; ++i) {
+    // TODO(siyuan): improve the performance
+    IterVarType iter_type = GetLoopIterType(loop_srefs[i]);
+    loop_iter_types.push_back(iter_type);
+    if (iter_type == IterVarType::kDataPar) {
+      i_last_datapar = i;
+    }
+  }
+  // Step 6. Check and add the candidates in turn according to the following rules:
+  //  - skip the unit loops (loops with extent 1);
+  //  - do not consider the data-parallel loops after a not-data-parallel loop;
+  //  - do not consider the trailing not-data-parallel loops.
+  location_srefs.reserve(n_candidate + 2);
+  location_indices.reserve(n_candidate + 2);
+  bool visited_reduce = false;
+  for (size_t i = 0; i < n_candidate; ++i) {
+    const int64_t* loop_extent = GetLoopIntExtent(loop_srefs[i]);
+    if (loop_extent != nullptr && *loop_extent == 1) {
+      continue;
+    }
+
+    if (loop_iter_types[i] == IterVarType::kDataPar) {
+      if (visited_reduce) {
+        break;
+      }
+    } else {
+      visited_reduce = true;
+      if (static_cast<int>(i) > i_last_datapar) {
+        break;
+      }
+    }
+    if (CanComputeAt(self, block_sref, loop_srefs[i], true)) {
+      location_srefs.push_back(loop_srefs[i]);
+      location_indices.push_back(i);
+    }
+  }
+
+  return std::make_pair(location_srefs, location_indices);
+}
+
 /******** Producer-consumer relation ********/
 
 Array<StmtSRef> GetProducers(const StmtSRef& block_sref, const BlockScope& scope) {
@@ -1343,6 +1495,139 @@ StmtSRef GetSRefTreeRoot(const StmtSRef& sref) {
   for (; p->parent != nullptr; p = p->parent) {
   }
   return GetRef<StmtSRef>(p);
+}
+
+/******** Misc ********/
+
+bool HasOp(const Stmt& stmt, const Array<Op>& ops) {
+  std::unordered_set<const Object*> op_set;
+  op_set.reserve(ops.size());
+  for (const Op& op : ops) {
+    op_set.insert(op.operator->());
+  }
+  bool found = false;
+  PreOrderVisit(stmt, [&found, &op_set](const ObjectRef& obj) -> bool {
+    if (found) {
+      return false;
+    }
+    if (const auto* call = obj.as<CallNode>()) {
+      if (op_set.count(call->op.operator->())) {
+        found = true;
+      }
+    }
+    return !found;
+  });
+  return found;
+}
+
+bool HasIfThenElse(const Stmt& stmt) {
+  bool has_branch = false;
+  auto f_visit = [&has_branch](const ObjectRef& obj) -> bool {
+    if (has_branch) {
+      // stop visiting
+      return false;
+    }
+    if (const auto* realize = obj.as<BlockRealizeNode>()) {
+      // Case 1: BlockRealize
+      if (!is_one(realize->predicate)) {
+        has_branch = true;
+      }
+    } else if (obj->IsInstance<IfThenElseNode>() || obj->IsInstance<SelectNode>()) {
+      // Case 2: IfThenElse / Select
+      has_branch = true;
+    } else if (const auto* call = obj.as<CallNode>()) {
+      // Case 3: Call the `if_then_else` operator
+      static const Op& op_if_then_else = Op::Get("tir.if_then_else");
+      if (call->op.same_as(op_if_then_else)) {
+        has_branch = true;
+      }
+    }
+    return !has_branch;
+  };
+  PreOrderVisit(stmt, f_visit);
+  return has_branch;
+}
+
+std::tuple</*exists=*/bool,
+           /*surjective=*/bool,
+           /*injective=*/bool,
+           /*ordered=*/bool,
+           /*no_const_read=*/bool,
+           /*no_shift_read=*/bool>
+AnalyzeReadWritePattern(const BufferRegion& read_region, const BufferRegion& write_region) {
+  static constexpr const std::tuple<bool, bool, bool, bool, bool, bool> kNotExist =
+      std::make_tuple(false, false, false, false, false, false);
+  // Step 1. Extract the write indices
+  int w_dim = write_region->buffer->shape.size();
+  std::unordered_map<const VarNode*, int> var2idx;
+  var2idx.reserve(w_dim);
+  for (int i = 0; i < w_dim; ++i) {
+    const Range& dom = write_region->region[i];
+    if (as_const_int(dom->extent) == nullptr) {
+      return kNotExist;
+    }
+    if (const auto* v = dom->min.as<VarNode>()) {
+      var2idx.emplace(v, i);
+    } else {
+      return kNotExist;
+    }
+  }
+  // Step 2. Map each read index to a write index
+  bool no_const_read = true;
+  bool no_shift_read = true;
+  int r_dim = read_region->buffer->shape.size();
+  std::vector<int> mapped(r_dim, -1);
+  for (int i = 0; i < r_dim; ++i) {
+    const Range& dom = read_region->region[i];
+    if (as_const_int(dom->extent) == nullptr) {
+      return kNotExist;
+    }
+    // Case 1. Read index is a constant
+    if (as_const_int(dom->min) != nullptr) {
+      no_const_read = false;
+      continue;
+    }
+    // Case 2. Read index cannot be recognized as `var +/- const`
+    // where `var` is a write index and `const` is an optional constant shift
+    Optional<IntImm> opt_const = NullOpt;
+    const VarNode* var =
+        static_cast<const VarNode*>(AnalyzeVarWithShift(dom->min, &opt_const).get());
+    if (var == nullptr || !var2idx.count(var)) {
+      return kNotExist;
+    }
+    // Case 3. Read index is `var +/- const`
+    mapped[i] = var2idx.at(var);
+    if (opt_const.defined()) {
+      no_shift_read = false;
+    }
+  }
+  // Step 3. Check if the mapping is ordered, and count how many times each var is mapped
+  std::vector<int> mapped_counter(w_dim, 0);
+  bool ordered = true;
+  int last_mapped = -1;
+  for (int i : mapped) {
+    if (i != -1) {
+      ++mapped_counter[i];
+      if (last_mapped != -1 && last_mapped > i) {
+        ordered = false;
+      }
+      last_mapped = i;
+    }
+  }
+  // Step 4. Check if the mapping is surjective or injective
+  // Surjective: each write index is mapped at least once
+  // Injective: each write index is mapped at most once
+  bool surjective = true;
+  bool injective = true;
+  for (int cnt : mapped_counter) {
+    if (cnt == 0) {
+      surjective = false;
+    } else if (cnt >= 2) {
+      injective = false;
+    }
+  }
+  return std::make_tuple(/*exist=*/true, surjective, injective, ordered, no_const_read,
+                         no_shift_read);
 }
 
 /******** Storage Scope ********/
