@@ -459,6 +459,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
 
         BindDNNLMemory(out_entry, dst_memory);
     } else {
+        #if 0
         dnnl::memory::dim B = input_shape[0],  // batch size
             IC = input_shape[1],               // input channels
             OC = weight_shape[0];              // output channels
@@ -509,6 +510,68 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
         auto data_memory = BindDNNLMemory(data_entry, data_md);
         auto weight_memory = BindDNNLMemory(weight_entry, dense_prim_desc.weights_desc());
         auto dst_memory = dnnl::memory(dense_prim_desc.dst_desc(), engine_);
+        JSONGraphNodeEntry out_entry(nid, 0);
+
+        net_args_.push_back({{DNNL_ARG_SRC, data_memory},
+                    {DNNL_ARG_WEIGHTS, weight_memory},
+                    {DNNL_ARG_DST, dst_memory}});
+
+        if (has_bias) {
+            auto bias_entry = node.GetInputs()[bias_entry_index];
+            auto bias_memory = BindDNNLMemory(bias_entry, bias_md);
+            net_args_.back().insert({DNNL_ARG_BIAS, bias_memory});
+        }
+        BindDNNLMemory(out_entry, dst_memory);
+        #endif
+
+        dnnl::memory::dim M = input_shape[0],  // batch size
+            K = input_shape[1],               // input channels
+            N = weight_shape[1];              // output channels
+
+        if (input_shape.size() == 3) {
+            M = input_shape[0] * input_shape[1];
+            K = input_shape[2];
+        }
+
+        auto layout = node.GetAttr<std::vector<std::string>>("weight_layout")[0];
+        if ("CN" == layout) {
+            N = weight_shape[1];
+        }
+
+        // Memory shapes.
+        dnnl::memory::dims data_dims = {M, K};
+        dnnl::memory::dims weight_dims = {K, N};
+        dnnl::memory::dims bias_dims = {1, N};
+        dnnl::memory::dims out_dims = {M, N};
+
+        // Memory descriptions.
+        auto data_md = dnnl::memory::desc({data_dims, dt::f32, tag::nc});
+        auto weight_md = dnnl::memory::desc({weight_dims, dt::f32, weight_df});
+        auto bias_md = dnnl::memory::desc({bias_dims, dt::f32, tag::nc});
+        auto dst_md = dnnl::memory::desc({out_dims, dt::f32, tag::nc});
+
+        // Matmul description.
+        auto matmul_desc = has_bias?
+            dnnl::matmul::desc(data_md, weight_md, bias_md, dst_md) :
+            dnnl::matmul::desc(data_md, weight_md, dst_md);
+
+        // Enable ReLU
+        dnnl::post_ops ops;
+        if (has_gelu) {
+            ops.append_eltwise(1.f, dnnl::algorithm::eltwise_gelu_erf, 0.f, 1.f);
+        }
+        dnnl::primitive_attr attr;
+        attr.set_post_ops(ops);
+
+        auto matmul_prim_desc = dnnl::matmul::primitive_desc(matmul_desc, attr, engine_);
+
+        auto matmul = dnnl::matmul(matmul_prim_desc);
+        net_.push_back(matmul);
+
+        // Memories.
+        auto data_memory = BindDNNLMemory(data_entry, data_md);
+        auto weight_memory = BindDNNLMemory(weight_entry, matmul_prim_desc.weights_desc());
+        auto dst_memory = dnnl::memory(matmul_prim_desc.dst_desc(), engine_);
         JSONGraphNodeEntry out_entry(nid, 0);
 
         net_args_.push_back({{DNNL_ARG_SRC, data_memory},

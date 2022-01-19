@@ -348,10 +348,10 @@ bool SpecialMatmulRel(const Array<Type>& types, int num_inputs, const Attrs& att
     ICHECK_EQ(data->shape.size(), 3) << "Only 3D data is supported";
     auto oc = weight->shape[0];
     if((param->weight_layout) == "CN") {
-        oc = weight->shape[1];
+        oc = weight->shape[0];
     }
     if((param->weight_layout) == "NC") {
-        oc = weight->shape[0];
+        oc = weight->shape[1];
     }
 
     oshape.Set(2, oc);

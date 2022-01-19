@@ -224,6 +224,46 @@ std::string AutoQuery_innerproduct(int B, int IC, int OC) {//int *shapes, struct
     return res;
 }
 
+std::string AutoQuery_matmul(int M, int K, int N) {//int *shapes, struct StructFormat* res
+    dnnl::engine eng(dnnl::engine::kind::cpu, 0);
+    dnnl::stream s(eng);
+    using tag = dnnl::memory::format_tag;
+    using dt = dnnl::memory::data_type;
+
+    // const dnnl::memory::dim batch = N;
+
+    dnnl::memory::dims matmul_src_tz = {M, K};
+    dnnl::memory::dims matmul_weights_tz = {K, N};
+    dnnl::memory::dims matmul_bias_tz = {1, N};
+    dnnl::memory::dims matmul_dst_tz = {M, N};
+
+    auto matmul_src_md = dnnl::memory::desc({matmul_src_tz}, dt::f32, tag::any);
+    auto matmul_weights_md = dnnl::memory::desc({matmul_weights_tz}, dt::f32, tag::any);
+    auto matmul_bias_md = dnnl::memory::desc({matmul_bias_tz}, dt::f32, tag::any);
+    auto matmul_dst_md = dnnl::memory::desc({matmul_dst_tz}, dt::f32, tag::any);
+
+    auto matmul_d = dnnl::matmul::desc(matmul_src_md, matmul_weights_md, matmul_bias_md,
+     matmul_dst_md);
+    auto matmul_pd = dnnl::matmul::primitive_desc(matmul_d, eng);
+
+    auto src_format = matmul_pd.src_desc();//.data;
+    auto weights_format = matmul_pd.weights_desc();//.data;
+    auto bias_format = matmul_pd.bias_desc();
+    auto dst_format = matmul_pd.dst_desc();//.data;
+    std::string src_df, weight_df, bias_df, dst_df;
+
+    src_df = md2fmt_tag_str(&src_format);
+    weight_df = md2fmt_tag_str(&weights_format);
+    bias_df = md2fmt_tag_str(&bias_format);
+    dst_df = md2fmt_tag_str(&dst_format);
+    std::string res = src_df + "," + weight_df + "," + bias_df + "," + dst_df;
+    return res;
+}
+
+TVM_REGISTER_GLOBAL("relay.ir.AutoQuery_matmul").set_body([](TVMArgs args, TVMRetValue* rv) {
+  *rv = AutoQuery_matmul(args[0], args[1], args[2]);
+});
+
 TVM_REGISTER_GLOBAL("relay.ir.AutoQuery_innerproduct").set_body([](TVMArgs args, TVMRetValue* rv) {
   *rv = AutoQuery_innerproduct(args[0], args[1], args[2]);
 });

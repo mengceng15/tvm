@@ -78,7 +78,10 @@ def _mx_fully_connected(inputs, attrs):
     res = _op.nn.dense(inputs[0], inputs[1], units=units)
     if len(data_shape) > 2:
         if len(data_shape) == 3 and len(weight_shape) == 2:
-            res = _op.nn.special_matmul(inputs[0], inputs[1])
+            # debug
+            weight_trans = _op.transpose(inputs[1], axes=(1, 0)) ##
+            res = _op.nn.special_matmul(inputs[0], weight_trans)
+            # res = _op.nn.special_matmul(inputs[0], inputs[1])
     if use_bias:
         assert len(inputs) == 3
         res = _op.add(res, inputs[2])

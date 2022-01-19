@@ -45,9 +45,9 @@ def alter_special_matmul(attrs, inputs, tinfos, out_type):
         res = relay.query_layout.AutoQuery_batch_matmul(B1, B2, M, K, N)
     else:
         B, M, IC = get_const_tuple(data_tensor.shape)
-        OC, IC = get_const_tuple(weight_tensor.shape)
+        IC, OC = get_const_tuple(weight_tensor.shape)
         B = B * M
-        res = relay.query_layout.AutoQuery_innerproduct(B, IC, OC)
+        res = relay.query_layout.AutoQuery_matmul(B, IC, OC)
 
     # print("queried weight layout:", res)
 
@@ -190,13 +190,13 @@ token_types = np.random.uniform(size=input_shape[1])
 valid_length = np.array([seq_length] * batch_size)
 module.set_input(data0=data, data1=token_types, data2=valid_length)
 # module.set_input(**params)
-# module.run()
-# tvm_output_0 = module.get_output(0).numpy()
-# tvm_output_1 = module.get_output(1).numpy()
-# seq_encoding, cls_encoding  = model(mx.nd.array(data), mx.nd.array(token_types), mx.nd.array(valid_length))
-# np.testing.assert_allclose(seq_encoding.asnumpy(), tvm_output_0, rtol=1e-04, atol=1e-04)
-# np.testing.assert_allclose(cls_encoding.asnumpy(), tvm_output_1, rtol=1e-04, atol=1e-04)
-# print("passed")
+module.run()
+tvm_output_0 = module.get_output(0).numpy()
+tvm_output_1 = module.get_output(1).numpy()
+seq_encoding, cls_encoding  = model(mx.nd.array(data), mx.nd.array(token_types), mx.nd.array(valid_length))
+np.testing.assert_allclose(seq_encoding.asnumpy(), tvm_output_0, rtol=1e-04, atol=1e-04)
+np.testing.assert_allclose(cls_encoding.asnumpy(), tvm_output_1, rtol=1e-04, atol=1e-04)
+print("passed")
 # print(tvm_output_0)
 # print(seq_encoding.asnumpy())
 
