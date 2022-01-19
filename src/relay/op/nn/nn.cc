@@ -346,8 +346,14 @@ bool SpecialMatmulRel(const Array<Type>& types, int num_inputs, const Attrs& att
     oshape.Set(2, oc);
   } else { // Normal 3d x 2D
     ICHECK_EQ(data->shape.size(), 3) << "Only 3D data is supported";
-    auto oc = weight->shape.size() == 2 ? weight->shape[0] :
-    weight->shape[0] * weight->shape[3];
+    auto oc = weight->shape[0];
+    if((param->weight_layout) == "CN") {
+        oc = weight->shape[1];
+    }
+    if((param->weight_layout) == "NC") {
+        oc = weight->shape[0];
+    }
+
     oshape.Set(2, oc);
   }
 
