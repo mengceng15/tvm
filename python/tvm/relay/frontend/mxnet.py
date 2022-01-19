@@ -74,30 +74,30 @@ def _mx_fully_connected(inputs, attrs):
         inputs[0] = _op.nn.batch_flatten(inputs[0])
     data_shape = _infer_type(inputs[0]).checked_type.shape
     # debug
-    weight_shape = _infer_type(inputs[1]).checked_type.shape
-    res = _op.nn.dense(inputs[0], inputs[1], units=units)
-    if len(data_shape) > 2:
-        if len(data_shape) == 3 and len(weight_shape) == 2:
-            res = _op.nn.special_matmul(inputs[0], inputs[1])
-    if use_bias:
-        assert len(inputs) == 3
-        res = _op.add(res, inputs[2])
-    if len(data_shape) > 2:
-        if len(data_shape) != 3:
-            new_shape = data_shape[:-1]
-            new_shape.append(units)
-            res = _op.reshape(res, new_shape)
-
-    # if len(data_shape) > 2:
-    #     inputs[0] = _op.reverse_reshape(inputs[0], [-1, 0])
+    # weight_shape = _infer_type(inputs[1]).checked_type.shape
     # res = _op.nn.dense(inputs[0], inputs[1], units=units)
+    # if len(data_shape) > 2:
+    #     if len(data_shape) == 3 and len(weight_shape) == 2:
+    #         res = _op.nn.special_matmul(inputs[0], inputs[1])
     # if use_bias:
     #     assert len(inputs) == 3
-    #     res = _op.nn.bias_add(res, inputs[2], axis=-1)
+    #     res = _op.add(res, inputs[2])
     # if len(data_shape) > 2:
-    #     new_shape = data_shape[:-1]
-    #     new_shape.append(units)
-    #     res = _op.reshape(res, new_shape)
+    #     if len(data_shape) != 3:
+    #         new_shape = data_shape[:-1]
+    #         new_shape.append(units)
+    #         res = _op.reshape(res, new_shape)
+
+    if len(data_shape) > 2:
+        inputs[0] = _op.reverse_reshape(inputs[0], [-1, 0])
+    res = _op.nn.dense(inputs[0], inputs[1], units=units)
+    if use_bias:
+        assert len(inputs) == 3
+        res = _op.nn.bias_add(res, inputs[2], axis=-1)
+    if len(data_shape) > 2:
+        new_shape = data_shape[:-1]
+        new_shape.append(units)
+        res = _op.reshape(res, new_shape)
     return res
 
 

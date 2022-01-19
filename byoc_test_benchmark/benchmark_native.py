@@ -48,20 +48,21 @@ mod = tvm.relay.transform.FoldConstant()(mod)
 mod = tvm.relay.transform.CombineParallelBatchMatmul()(mod)
 mod = tvm.relay.transform.FoldConstant()(mod)
 
-print(mod)
+target = "llvm -mcpu=cascadelake -libs=mkl"
 
-target = "llvm -mcpu=cascadelake"
-
-logdir = "/home/mengceng/workspace/TLCBench/tmp_logs"
-log_file = os.path.join(
-    logdir, "autoscheduler", "unknown", "bert-B1-float32" + ".json")
+# logdir = "/home/mengceng/workspace/TLCBench/tmp_logs"
+# log_file = os.path.join(
+#     logdir, "autoscheduler", "unknown", "bert-B1-float32" + ".json")
 
 ctx = tvm.cpu(0)
 
-with auto_scheduler.ApplyHistoryBest(log_file):
-    with tvm.transform.PassContext(opt_level=3,
-     config={"relay.backend.use_auto_scheduler": True}):
-        lib = relay.build(mod, target=target, params=params)
+# with auto_scheduler.ApplyHistoryBest(log_file):
+#     with tvm.transform.PassContext(opt_level=3,
+#      config={"relay.backend.use_auto_scheduler": True}):
+#         lib = relay.build(mod, target=target, params=params)
+
+with tvm.transform.PassContext(opt_level=3):
+    lib = relay.build(mod, target=target, params=params)
 
 module = runtime.GraphModule(lib["default"](ctx))
 
@@ -72,33 +73,29 @@ valid_length = np.array([seq_length] * batch_size)
 module.set_input(data0=data, data1=token_types, data2=valid_length)
 
 # test accuracy
-module.run()
-tvm_output_0 = module.get_output(0).numpy()
-tvm_output_1 = module.get_output(1).numpy()
-seq_encoding, cls_encoding  = model(mx.nd.array(data), mx.nd.array(token_types), mx.nd.array(valid_length))
-np.testing.assert_allclose(seq_encoding.asnumpy(), tvm_output_0, rtol=1e-04, atol=1e-04)
-np.testing.assert_allclose(cls_encoding.asnumpy(), tvm_output_1, rtol=1e-04, atol=1e-04)
-print(tvm_output_0)
-print(seq_encoding.asnumpy())
-print(tvm_output_1)
-print(cls_encoding.asnumpy())
-print("passed")
+# module.run()
+# tvm_output_0 = module.get_output(0).numpy()
+# tvm_output_1 = module.get_output(1).numpy()
+# seq_encoding, cls_encoding  = model(mx.nd.array(data), mx.nd.array(token_types), mx.nd.array(valid_length))
+# np.testing.assert_allclose(seq_encoding.asnumpy(), tvm_output_0, rtol=1e-04, atol=1e-04)
+# np.testing.assert_allclose(cls_encoding.asnumpy(), tvm_output_1, rtol=1e-04, atol=1e-04)
+# print("passed")
 
-# import time
+import time
 
-# def warmup():
-#     for i in range(200):
-#         module.run()
-#     ctx.sync()
+def warmup():
+    for i in range(200):
+        module.run()
+    ctx.sync()
 
-# def x():
-#     for i in range(1000):
-#         module.run()
-#     ctx.sync()
+def x():
+    for i in range(1000):
+        module.run()
+    ctx.sync()
 
-# warmup()
-# start = time.time()
-# x()
-# end = time.time()
-# print("time:", (end-start)/1000)
+warmup()
+start = time.time()
+x()
+end = time.time()
+print("time:", (end-start)/1000)
 
