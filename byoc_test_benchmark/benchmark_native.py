@@ -78,27 +78,27 @@ tvm_output_1 = module.get_output(1).numpy()
 seq_encoding, cls_encoding  = model(mx.nd.array(data), mx.nd.array(token_types), mx.nd.array(valid_length))
 np.testing.assert_allclose(seq_encoding.asnumpy(), tvm_output_0, rtol=1e-04, atol=1e-04)
 np.testing.assert_allclose(cls_encoding.asnumpy(), tvm_output_1, rtol=1e-04, atol=1e-04)
-print(tvm_output_0)
-print(seq_encoding.asnumpy())
-print(tvm_output_1)
-print(cls_encoding.asnumpy())
+# print(tvm_output_0)
+# print(seq_encoding.asnumpy())
+# print(tvm_output_1)
+# print(cls_encoding.asnumpy())
 print("passed")
 
-# import time
+import time
 
-# def warmup():
-#     for i in range(200):
-#         module.run()
-#     ctx.sync()
+def warmup():
+    for i in range(200):
+        module.run()
+    ctx.sync()
 
-# def x():
-#     for i in range(1000):
-#         module.run()
-#     ctx.sync()
+def x():
+    for i in range(1000):
+        module.run()
+    ctx.sync()
 
-# warmup()
-# start = time.time()
-# x()
-# end = time.time()
-# print("time:", (end-start)/1000)
+warmup()
+start = time.time()
+x()
+end = time.time()
+print("time:", (end-start)/1000)
 

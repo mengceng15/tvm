@@ -173,8 +173,6 @@ target = "llvm -mcpu=cascadelake"
 
 ctx = tvm.cpu(0)
 
-batches = 200
-warmup = 1000
 with tvm.transform.PassContext(opt_level=3):
     json, lib, params = relay.build(mod, target=target, params=params)
 
@@ -186,7 +184,5 @@ token_types = np.random.uniform(size=input_shape[1])
 valid_length = np.array([seq_length] * batch_size)
 
 rt_mod.set_input(data0=data, data1=token_types, data2=valid_length)
-for i in range(batches+warmup):
-    tmp = rt_mod.profile()
-    if i == batches + warmup - 1:
-        print(tmp)
+tmp = rt_mod.profile()
+print(tmp)

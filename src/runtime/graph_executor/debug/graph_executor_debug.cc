@@ -285,7 +285,8 @@ class GraphExecutorDebug : public GraphExecutor {
     profiling::Profiler prof(devices_, cs);
 
     // warm up. 1 iteration does not seem enough.
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 100; i++) {
+    // for (int i = 0; i < 3; i++) {
       GraphExecutor::Run();
     }
 
