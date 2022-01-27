@@ -183,22 +183,29 @@ ctx = tvm.cpu()
 
 tt_a = tvm.nd.array(tokens_tensor.numpy(), ctx) #attention_mask
 st_a = tvm.nd.array(segments_tensors.numpy(), ctx) #input_ids
-with tvm.transform.PassContext(opt_level=3):
-        graph, lib, params = tvm.relay.build(mod_bert,
-                                     target=target,
-                                     target_host=target_host,
-                                     params=params_bert)
+# with tvm.transform.PassContext(opt_level=3):
+#         graph, lib, params = tvm.relay.build(mod_bert,
+#                                      target=target,
+#                                      target_host=target_host,
+#                                      params=params_bert)
 
-module = tvm.contrib.graph_executor.create(graph, lib, ctx)
+# module = tvm.contrib.graph_executor.create(graph, lib, ctx)
+with tvm.transform.PassContext(opt_level=3):
+    lib = relay.build(mod_bert, target=target, params=params_bert)
+
+ctx = tvm.cpu(0)
+module = runtime.GraphModule(lib["default"](ctx))
+
 module.set_input("input_ids", tvm.nd.array(tt_a))
 module.set_input("attention_mask", tvm.nd.array(st_a))
-module.set_input(**params)
-module.run()
+module.set_input(**params_bert)
 
+# module.run()
 # tvm_output_0 = module.get_output(0).numpy()
 # tvm_output_1 = module.get_output(1).numpy()
 # np.testing.assert_allclose(torch_result[0], tvm_output_0, rtol=1e-05, atol=1e-04)
 # np.testing.assert_allclose(torch_result[1], tvm_output_1, rtol=1e-05, atol=1e-04)
+
 import time
 
 def x():

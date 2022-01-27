@@ -60,8 +60,8 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     {"OIHW8i8o", tag::ABcd8b8a},
     
     {"NHWC", tag::acdb},
-    {"OHWI64o", tag::Acdb64a},
-    {"OHWI48o", tag::Acdb48a},
+    // {"OHWI64o", tag::Acdb64a},
+    // {"OHWI48o", tag::Acdb48a},
     {"OHWI32o", tag::Acdb32a},
     {"OHWI16o", tag::Acdb16a},
     {"OHWI8o", tag::Acdb8a},
@@ -69,7 +69,9 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     {"NC16c64n", tag::AB16b64a},
     {"NC16c32n", tag::AB16b32a},
     {"NC16c16n", tag::AB16b16a},
-    };
+    {"NC", tag::ab},
+    {"CN", tag::ba},
+  };
 
   enum class SpecialMatmulPattern {
     specialMatmulBiasGelu,
@@ -513,6 +515,9 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
         }
 
         auto layout = node.GetAttr<std::vector<std::string>>("weight_layout")[0];
+        if ("CN" == layout) {
+            OC = weight_shape[1];
+        }
         if ("NC16c64n" == layout || "NC16c32n" == layout || "NC16c16n" == layout) {
             OC = weight_shape[0] * weight_shape[3];
         }
