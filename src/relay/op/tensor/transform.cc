@@ -3402,6 +3402,8 @@ bool SequenceMaskRel(const Array<Type>& types, int num_inputs, const Attrs& attr
   ICHECK_EQ(types.size(), 3);
   const auto* data = types[0].as<TensorTypeNode>();
   const auto* valid_length = types[1].as<TensorTypeNode>();
+  if (!data) return false;
+  if (!valid_length) return false;
   ICHECK(data);
   ICHECK(valid_length);
   const auto param = attrs.as<SequenceMaskAttrs>();

@@ -154,13 +154,14 @@ input_shape = (shape_dict["data0"], shape_dict["data1"], shape_dict["data2"])
 
 mod = tvm.relay.transform.FastMath()(mod)
 mod = tvm.relay.transform.EliminateCommonSubexpr()(mod)
-BindPass = tvm.relay.transform.function_pass(
-    lambda fn, new_mod, ctx: tvm.relay.build_module.bind_params_by_name(
-        fn, params
-    ),
-    opt_level=1,
-)
-mod = BindPass(mod)
+# TODO: NAN after binding constants
+# BindPass = tvm.relay.transform.function_pass(
+#     lambda fn, new_mod, ctx: tvm.relay.build_module.bind_params_by_name(
+#         fn, params
+#     ),
+#     opt_level=1,
+# )
+# mod = BindPass(mod)
 mod = tvm.relay.transform.FoldConstant()(mod)
 mod = tvm.relay.transform.CombineParallelBatchMatmul()(mod)
 mod = tvm.relay.transform.FoldConstant()(mod)
@@ -189,7 +190,7 @@ data = np.random.uniform(size=input_shape[0])
 token_types = np.random.uniform(size=input_shape[1])
 valid_length = np.array([seq_length] * batch_size)
 module.set_input(data0=data, data1=token_types, data2=valid_length)
-# module.set_input(**params)
+module.set_input(**params) #TODO: NAN after binding constants, so we set it here
 module.run()
 tvm_output_0 = module.get_output(0).numpy()
 tvm_output_1 = module.get_output(1).numpy()

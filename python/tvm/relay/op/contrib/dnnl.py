@@ -188,7 +188,7 @@ def make_specialmatmul_biasadd_gelu_pattern():
     const2 = is_expr(const(0.5))
     const3 = is_expr(const(1.0))
     div = is_op("divide")(bias_add, const1)
-    erf = is_op("erf")(div)
+    erf = is_op("fast_erf")(div) # For FastMath pass
     mul = is_op("multiply")(bias_add, const2)
     add = is_op("add")(erf, const3)
     mul2 = is_op("multiply")(mul, add)
@@ -208,6 +208,7 @@ def pattern_table():
     # elt_list = ["nn.relu", "tanh", "sigmoid", None]
     elt_list = ["nn.relu", "sigmoid", None]
     dnnl_patterns = []
+    dnnl_patterns.append(make_specialmatmul_biasadd_gelu_pattern())
     for with_bias in [True, False]:
         for elt in elt_list:
             if not with_bias and not elt:
@@ -215,7 +216,6 @@ def pattern_table():
             dnnl_patterns.append(make_dnnl_pattern("conv2d", with_bias, elt))
             dnnl_patterns.append(make_dnnl_pattern("dense", with_bias, elt))
             dnnl_patterns.append(make_specialmatmul_biasadd_pattern())
-            # dnnl_patterns.append(make_specialmatmul_biasadd_gelu_pattern())
     return dnnl_patterns
 
 
