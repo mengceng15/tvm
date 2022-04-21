@@ -64,13 +64,32 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
 
   void Run() override {
     // Fill in the input buffers.
+    std::cout << "data_entry_ size: " << data_entry_.size() << std::endl;
+
+    std::cout << "input_nodes_ size: " << input_nodes_.size() << std::endl;
     for (size_t i = 0; i < input_nodes_.size(); ++i) {
       auto eid = EntryID(input_nodes_[i], 0);
       // TODO(@comaniac): Support other data lengths.
       size_t offset_in_bytes = entry_out_mem_[eid].second * 4;
       size_t buffer_size = GetDataSize(*data_entry_[eid]);
-      write_to_dnnl_memory(data_entry_[eid]->data, entry_out_mem_[eid].first, buffer_size,
-                           offset_in_bytes);
+
+      {
+        std::cout << "shape of input[" << i << "]:" << std::endl;
+        int n_dims = data_entry_[eid]->ndim;
+        std::cout << "n_dims: " << n_dims << std::endl;
+        int64_t* ptr = data_entry_[eid]->shape;
+        for (int d = 0; d < n_dims; d++) {
+          std::cout << *(ptr + d) << " ";
+        }
+        std::cout << *((float*) data_entry_[eid]->data) << std::endl;
+        // if (n_dims == 0) {
+        //   std::cout << *ptr << std::endl;
+        // }
+        std::cout << std::endl;
+      }
+
+      // write_to_dnnl_memory(data_entry_[eid]->data, entry_out_mem_[eid].first, buffer_size,
+      //                      offset_in_bytes);
     }
 
     // Invoke the engine through intepreting the stream.
@@ -255,7 +274,11 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       if (node.GetOpType() == "kernel") {
         ICHECK_EQ(node.GetOpType(), "kernel");
         auto op_name = node.GetOpName();
-        if (std::regex_match(op_name, deconv_pat) ||
+        std::cout << "OP_NAME(runtime): " << op_name << std::endl;
+        if ("dnnl.qint8_dense_relu" == op_name) {
+          std::cout << "yes" << std::endl;
+          Qint8_Dense_RELU(nid);
+        } else if (std::regex_match(op_name, deconv_pat) ||
             std::regex_match(op_name, conv_transpose_pat)) {
           Deconvolution(nid);
         } else if (std::regex_match(op_name, conv_pat)) {
@@ -308,6 +331,13 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
 
     entry_out_mem_[eid] = {mem, offset};
     return entry_out_mem_[eid].first;
+  }
+
+  void Qint8_Dense_RELU(const size_t& nid) {
+    std::cout << "Qint8_Dense_RELU" << std::endl;
+    auto node = nodes_[nid];
+    auto op_name = node.GetOpName();
+
   }
 
   void Convolution(const size_t& nid) {

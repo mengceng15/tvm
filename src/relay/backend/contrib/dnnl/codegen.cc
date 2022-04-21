@@ -454,6 +454,11 @@ class DNNLJSONSerializer : public backend::contrib::JSONSerializer {
     ICHECK_NE(pattern_name, "");
     std::vector<std::string> op_list;
     size_t pos = 0, start = 0;
+    if ("dnnl.qint8_dense_relu" == pattern_name) {
+      op_list.push_back("nn.dense");
+      op_list.push_back("nn.relu");
+      return op_list;
+    }
     while ((pos = pattern_name.find(interval, start)) != std::string::npos) {
       std::string op_name = pattern_name.substr(start, pos - start);
       if (op_name.find("dnnl") != std::string::npos) {
@@ -487,6 +492,7 @@ class DNNLJSONSerializer : public backend::contrib::JSONSerializer {
       ICHECK(comp.defined()) << "DNNL JSON runtime only supports composite functions.";
       name = comp.value();
 
+      std::cout << "name: " << name << std::endl;
       if (name.find("dnnl.deconv2d") != std::string::npos) {
         std::vector<std::string> op_list = ParsingOpList(name);
         call = GetRootCall(fn->body.as<CallNode>(), op_list.size() - 1, op_list);
@@ -509,6 +515,13 @@ class DNNLJSONSerializer : public backend::contrib::JSONSerializer {
         ICHECK(call->op.as<OpNode>()) << "Not op node";
       } else if (name.find("dnnl.dense") != std::string::npos) {
         std::vector<std::string> op_list = ParsingOpList(name);
+      } else if ("dnnl.qint8_dense_relu" == name) {
+        std::cout << "op name: " << name << std::endl;
+        std::vector<std::string> op_list = ParsingOpList(name);
+        for (auto e : op_list) {
+          std::cout << e << " ";
+        }
+        std::cout << std::endl;
         call = GetRootCall(fn->body.as<CallNode>(), op_list.size() - 1, op_list);
         ICHECK(call->op.as<OpNode>()) << "Not op node";
       } else {
@@ -519,10 +532,53 @@ class DNNLJSONSerializer : public backend::contrib::JSONSerializer {
     }
 
     std::vector<JSONGraphNodeEntry> inputs;
+    std::cout << "DEBUG" << std::endl;
+    std::cout << cn->args << std::endl;
+
+    std::cout << cn->op.as<FunctionNode>()
+      ->body.as<CallNode>()
+      ->args[0].as<CallNode>()
+      ->args[0].as<CallNode>()
+      ->args << std::endl;
+
+    std::cout << cn->op.as<FunctionNode>()
+      ->body.as<CallNode>()
+      ->args[0].as<CallNode>()
+      ->args[1].as<CallNode>()
+      ->args << std::endl;
+    std::cout << "DEBUG" << std::endl;
+
     for (const auto& arg : cn->args) {
       auto res = VisitExpr(arg);
       inputs.insert(inputs.end(), res.begin(), res.end());
     }
+
+    if ("dnnl.qint8_dense_relu" == name) {
+      auto data_args = cn->op.as<FunctionNode>()
+        ->body.as<CallNode>()->args[0].as<CallNode>()
+        ->args[0].as<CallNode>()
+        ->args;
+      auto weight_args = cn->op.as<FunctionNode>()
+        ->body.as<CallNode>()->args[0].as<CallNode>()
+        ->args[1].as<CallNode>()
+        ->args;
+
+      for (const auto& arg : data_args) {
+        if (arg.as<ConstantNode>()) {
+          auto res = VisitExpr(arg);
+          inputs.insert(inputs.end(), res.begin(), res.end());
+        }
+      }
+      for (const auto& arg : weight_args) {
+        if (arg.as<ConstantNode>()) {
+          auto res = VisitExpr(arg);
+          inputs.insert(inputs.end(), res.begin(), res.end());
+        }
+      }
+    } 
+
+    std::cout << "inputs.size(): " << inputs.size() << std::endl;
+    std::cout << "cn->args: " << cn->args.size() << std::endl;
     auto node = std::make_shared<JSONGraphNode>(name,     /* name_ */
                                                 "kernel", /* op_type_ */
                                                 inputs, 1 /* num_outputs_ */);

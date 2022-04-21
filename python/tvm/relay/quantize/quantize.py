@@ -358,10 +358,11 @@ def quantize(mod, params=None, dataset=None):
     calibrate_pass = tvm.transform.module_pass(
         calibrate(dataset), opt_level=1, name="QuantizeCalibrate"
     )
+    # quant_passes = [partition(), annotate(), calibrate_pass, tvm.relay.transform.InferType()]
+    # if not current_qconfig().do_simulation:
+    #     quant_passes.append(realize())
+    # quant_passes.append(_transform.FoldConstant())
     quant_passes = [partition(), annotate(), calibrate_pass, tvm.relay.transform.InferType()]
-    if not current_qconfig().do_simulation:
-        quant_passes.append(realize())
-    quant_passes.append(_transform.FoldConstant())
     quantize_seq = tvm.transform.Sequential(quant_passes)
     with tvm.transform.PassContext(
         opt_level=3, required_pass=["QuantizeAnnotate", "QuantizeCalibrate", "QuantizeRealize"]

@@ -41,7 +41,7 @@ from tvm.relay.expr import GlobalVar
 from tvm.relay.expr_functor import ExprMutator, ExprVisitor
 
 from ... import _ffi_api
-from ...dataflow_pattern import wildcard, is_op
+from ...dataflow_pattern import wildcard, is_op, is_constant
 from .register import register_pattern_table
 
 logger = logging.getLogger("DNNL")
@@ -93,7 +93,23 @@ _register_external_op_helper("sigmoid")
 _register_external_op_helper("nn.softmax")
 _register_external_op_helper("add")
 _register_external_op_helper("multiply")
+_register_external_op_helper("relay.op.annotation.simulated_quantize")
 
+def make_qint8_dense_pattern():
+    pattern_name = "dnnl.qint8_dense_relu"
+    datax = wildcard()
+    datax_c1 = is_constant()
+    datax_c2 = is_constant()
+    datax_c3 = is_constant()
+    dataw = wildcard()
+    dataw_c1 = is_constant()
+    dataw_c2 = is_constant()
+    dataw_c3 = is_constant()
+    quantx = is_op("relay.op.annotation.simulated_quantize")(datax, datax_c1, datax_c2, datax_c3)
+    quantw = is_op("relay.op.annotation.simulated_quantize")(dataw, dataw_c1, dataw_c2, dataw_c3)
+    dense = is_op("nn.dense")(quantx, quantw)
+    relu = is_op("nn.relu")(dense)
+    return (pattern_name, relu)
 
 def make_conv_pattern(conv_name, with_bias=True, with_eltwise=None):
     """Create patterns related to conv and conv_transpose.
@@ -195,6 +211,7 @@ def pattern_table():
     """
     elt_list = ["nn.relu", "tanh", "sigmoid", None]
     dnnl_patterns = []
+    dnnl_patterns.append(make_qint8_dense_pattern())
     for with_bias in [True, False]:
         for elt in elt_list:
             if not with_bias and not elt:
