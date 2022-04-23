@@ -85,6 +85,7 @@ class JSONRuntimeBase : public ModuleNode {
         this->Run();
       });
     } else if ("__init_" + this->symbol_name_ == name) {
+      std::cout << "func name: " << name << std::endl;
       // The function to initialize constant tensors.
       return PackedFunc([sptr_to_self, this](TVMArgs args, TVMRetValue* rv) {
         ICHECK_EQ(args.size(), 1U);
@@ -214,10 +215,10 @@ class JSONRuntimeBase : public ModuleNode {
    * \param consts A list of constant NDArray to be used.
    */
   void SetupConstants(const Array<NDArray>& consts) {
+    std::cout << "setup constants is done" << std::endl;
     std::cout << consts.size() << std::endl;
     for (size_t i = 0; i < consts.size(); ++i) {
       data_entry_[EntryID(const_idx_[i], 0)] = consts[i].operator->();
-
       {
         std::cout << "shape of const[" << i << "]:" << std::endl;
         int n_dims = data_entry_[EntryID(const_idx_[i], 0)]->ndim;
@@ -229,7 +230,7 @@ class JSONRuntimeBase : public ModuleNode {
         std::cout << std::endl;
       }
 
-      std::cout << *(float*)(data_entry_[EntryID(const_idx_[i], 0)]) << std::endl;
+      std::cout << *(float*)(data_entry_[EntryID(const_idx_[i], 0)]->data) << std::endl;
     }
   }
 

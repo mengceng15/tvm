@@ -53,13 +53,15 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
   const char* type_key() const { return "dnnl_json"; }
 
   void Init(const Array<NDArray>& consts) override {
-    BuildEngine();
+    // BuildEngine();
 
     ICHECK_EQ(consts.size(), const_idx_.size())
         << "The number of input constants must match the number of required.";
 
     // Setup constants entries for weights.
     SetupConstants(consts);
+
+    BuildEngine();
   }
 
   void Run() override {
@@ -337,7 +339,31 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     std::cout << "Qint8_Dense_RELU" << std::endl;
     auto node = nodes_[nid];
     auto op_name = node.GetOpName();
-
+    std::cout << "Node number of inputs: " << node.GetInputs().size() << std::endl;
+    auto data_entry = node.GetInputs()[0];
+    auto weight_entry = node.GetInputs()[1];
+    // auto data_json_node_entry_id = EntryID(node.GetInputs()[0].id_, 0);
+    // std::cout << "data json node entry id: " << data_json_node_entry_id << std::endl;
+    int weight_json_node_entry_id = EntryID(node.GetInputs()[1].id_, 0);
+    std::cout << "weight json node entry id: " << weight_json_node_entry_id << std::endl;
+    std::cout << "data_entry_ size: " << data_entry_.size() << std::endl;
+    auto weight_tensor_ptr = data_entry_[weight_json_node_entry_id];
+    std::cout << "got weight tensor ptr" << std::endl;
+    std::cout << "weight ndims: " << weight_tensor_ptr->ndim << std::endl;
+    std::cout << "First elemt of weight: " << *((float*)weight_tensor_ptr->data) << std::endl;
+    
+    dnnl::memory::dims input_shape = nodes_[data_entry.id_].GetOpShape()[data_entry.index_];
+    dnnl::memory::dims weight_shape = nodes_[weight_entry.id_].GetOpShape()[weight_entry.index_];
+    std::cout << "input_shape: ";
+    for (auto e : input_shape) {
+      std::cout << e << " ";
+    }
+    std::cout << std::endl;
+    std::cout << "weight_shape: ";
+    for (auto e : weight_shape) {
+      std::cout << e << " ";
+    }
+    std::cout << std::endl;
   }
 
   void Convolution(const size_t& nid) {
