@@ -67,36 +67,45 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
   void Run() override {
     // Fill in the input buffers.
     std::cout << "data_entry_ size: " << data_entry_.size() << std::endl;
-
     std::cout << "input_nodes_ size: " << input_nodes_.size() << std::endl;
+    std::cout << "outputs_ size: " << outputs_.size() << std::endl;
+    std::cout << "entry_out_mem_ size: " << entry_out_mem_.size() << std::endl;
+
+    if (data_entry_.size() != entry_out_mem_.size()) {
+      std::cout << "data_entry_ and entry_out_mem_ size mismatch" << std::endl;
+      std::cout << data_entry_.size() << " vs " << entry_out_mem_.size() << std::endl;
+    }
+
     for (size_t i = 0; i < input_nodes_.size(); ++i) {
       auto eid = EntryID(input_nodes_[i], 0);
       // TODO(@comaniac): Support other data lengths.
       size_t offset_in_bytes = entry_out_mem_[eid].second * 4;
       size_t buffer_size = GetDataSize(*data_entry_[eid]);
 
-      {
-        std::cout << "shape of input[" << i << "]:" << std::endl;
-        int n_dims = data_entry_[eid]->ndim;
-        std::cout << "n_dims: " << n_dims << std::endl;
-        int64_t* ptr = data_entry_[eid]->shape;
-        for (int d = 0; d < n_dims; d++) {
-          std::cout << *(ptr + d) << " ";
-        }
-        std::cout << *((float*) data_entry_[eid]->data) << std::endl;
-        // if (n_dims == 0) {
-        //   std::cout << *ptr << std::endl;
-        // }
-        std::cout << std::endl;
-      }
+      // {
+      //   std::cout << "shape of input[" << i << "]:" << std::endl;
+      //   int n_dims = data_entry_[eid]->ndim;
+      //   std::cout << "n_dims: " << n_dims << std::endl;
+      //   int64_t* ptr = data_entry_[eid]->shape;
+      //   for (int d = 0; d < n_dims; d++) {
+      //     std::cout << *(ptr + d) << " ";
+      //   }
+      //   std::cout << *((float*) data_entry_[eid]->data) << std::endl;
+      //   // if (n_dims == 0) {
+      //   //   std::cout << *ptr << std::endl;
+      //   // }
+      //   std::cout << std::endl;
+      // }
 
-      // write_to_dnnl_memory(data_entry_[eid]->data, entry_out_mem_[eid].first, buffer_size,
-      //                      offset_in_bytes);
+      write_to_dnnl_memory(data_entry_[eid]->data, entry_out_mem_[eid].first, buffer_size,
+                           offset_in_bytes);
     }
+    std::cout << "data loading success" << std::endl;
 
     // Invoke the engine through intepreting the stream.
     for (size_t i = 0; i < net_.size(); ++i) {
       net_.at(i).execute(stream_, net_args_.at(i));
+      std::cout << "finish running net " << i << std::endl;
     }
     stream_.wait();
 
@@ -108,6 +117,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       read_from_dnnl_memory(data_entry_[eid]->data, entry_out_mem_[eid].first, buffer_size,
                             offset_in_bytes);
     }
+    std::cout << "data writing success " << std::endl;
   }
 
  private:
@@ -335,6 +345,14 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     return entry_out_mem_[eid].first;
   }
 
+  uint32_t GetDataCount(const DLTensor& arr) {
+    size_t count = 1;
+    for (tvm_index_t i = 0; i < arr.ndim; ++i) {
+      count *= static_cast<size_t>(arr.shape[i]);
+    }
+    return count;
+  }
+
   void Qint8_Dense_RELU(const size_t& nid) {
     std::cout << "Qint8_Dense_RELU" << std::endl;
     auto node = nodes_[nid];
@@ -342,18 +360,40 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     std::cout << "Node number of inputs: " << node.GetInputs().size() << std::endl;
     auto data_entry = node.GetInputs()[0];
     auto weight_entry = node.GetInputs()[1];
-    // auto data_json_node_entry_id = EntryID(node.GetInputs()[0].id_, 0);
-    // std::cout << "data json node entry id: " << data_json_node_entry_id << std::endl;
-    int weight_json_node_entry_id = EntryID(node.GetInputs()[1].id_, 0);
-    std::cout << "weight json node entry id: " << weight_json_node_entry_id << std::endl;
-    std::cout << "data_entry_ size: " << data_entry_.size() << std::endl;
-    auto weight_tensor_ptr = data_entry_[weight_json_node_entry_id];
-    std::cout << "got weight tensor ptr" << std::endl;
-    std::cout << "weight ndims: " << weight_tensor_ptr->ndim << std::endl;
-    std::cout << "First elemt of weight: " << *((float*)weight_tensor_ptr->data) << std::endl;
-    
+    // auto bias_entry = node.GetInputs()[2];
+    JSONGraphNodeEntry out_entry(nid, 0);
+
+#define GET_NODE_INFO(n) \
+  int const##n##_json_node_entry_id = EntryID(node.GetInputs()[n].id_, 0); \
+  std::cout << node.GetInputs()[n].id_ << std::endl;\
+  std::cout << node.GetInputs()[n].index_ << std::endl;\
+  std::cout << "const node json node entry id: " << const##n##_json_node_entry_id << std::endl; \
+  auto const##n##_tensor_ptr = data_entry_[const##n##_json_node_entry_id]; \
+  auto const##n##_ndim = const##n##_tensor_ptr->ndim; \
+  std::cout << "data count: " << this->GetDataCount(*const##n##_tensor_ptr) << std::endl; \
+  std::cout << "First elemt of const node: " << *((float*)const##n##_tensor_ptr->data) << '\n' << std::endl;
+
+    // GET_NODE_INFO(0) // not const cannot get
+    GET_NODE_INFO(1)
+    GET_NODE_INFO(2)
+    GET_NODE_INFO(3)
+    GET_NODE_INFO(4)
+    GET_NODE_INFO(5)
+    GET_NODE_INFO(6)
+    // GET_NODE_INFO(7) // not const cannot get
+
+    std::cout << "nodes_ size: " << nodes_.size() << std::endl;
+    std::cout << "node input size: " << node.GetInputs().size() << std::endl;
+    // nodes_ is global, node is local
     dnnl::memory::dims input_shape = nodes_[data_entry.id_].GetOpShape()[data_entry.index_];
     dnnl::memory::dims weight_shape = nodes_[weight_entry.id_].GetOpShape()[weight_entry.index_];
+    dnnl::memory::dims out_shape = nodes_[out_entry.id_].GetOpShape()[out_entry.index_];
+
+    int64_t M = input_shape[0];
+    int64_t K = input_shape[1];
+    int64_t N = weight_shape[0];
+    std::cout << "M: " << M << " " << "K: " << K << " " << "N: " << N << std::endl;
+
     std::cout << "input_shape: ";
     for (auto e : input_shape) {
       std::cout << e << " ";
@@ -364,6 +404,146 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       std::cout << e << " ";
     }
     std::cout << std::endl;
+
+    std::vector<float> data_scales;
+    std::vector<float> weight_scales;
+    std::vector<float> bias_scales = {1.0f};
+    std::vector<float> dst_scales = {1.0f}; // What is this?
+    std::vector<float> ip_scales = {1.0f};
+
+    for (uint32_t i = 0; i < this->GetDataCount(*const1_tensor_ptr); i++) {
+      data_scales.push_back(*((float*)const1_tensor_ptr->data + i));
+    }
+
+    for (uint32_t i = 0; i < this->GetDataCount(*const4_tensor_ptr); i++) {
+      weight_scales.push_back(*((float*)const4_tensor_ptr->data + i));
+    }
+    // std::cout << "data_scales: " << std::endl;
+    // for (auto e : data_scales) {
+    //   std::cout << e << " ";
+    // }
+    // std::cout << std::endl;
+
+    // std::cout << "weight_scales: " << std::endl;
+    // for (auto e : weight_scales) {
+    //   std::cout << e << " ";
+    // }
+    // std::cout << std::endl;
+
+    dnnl::memory::dims ip_src_tz = {M, K};
+    dnnl::memory::dims ip_weights_tz = {N, K};
+    dnnl::memory::dims ip_bias_tz = {N};
+    dnnl::memory::dims ip_dst_tz = {M, N};
+
+    const int src_mask = 0;
+    const int weight_mask = 0;
+    const int bias_mask = 0;
+    const int dst_mask = 0;
+    const int ip_mask = 0;
+
+    auto user_src_md = dnnl::memory::desc({ip_src_tz, dt::f32, tag::ab});
+    auto user_wei_md = dnnl::memory::desc({ip_weights_tz, dt::f32, tag::ab});
+    auto user_bia_md = dnnl::memory::desc({ip_bias_tz, dt::f32, tag::x});
+
+    auto user_src_memory = BindDNNLMemory(data_entry, user_src_md);
+    auto user_wei_memory = BindDNNLMemory(weight_entry, user_wei_md);
+    // auto user_bia_memory = BindDNNLMemory(bias_entry, user_bia_md);
+    auto user_bia_memory = dnnl::memory(user_bia_md, engine_);
+    float bias[N] = {0};
+    write_to_dnnl_memory(bias, user_bia_memory, N * sizeof(float));
+    
+    auto ip_src_md = dnnl::memory::desc({ip_src_tz}, dt::u8, tag::any);
+    auto ip_bias_md = dnnl::memory::desc({ip_bias_tz}, dt::s8, tag::any);
+    auto ip_weights_md = dnnl::memory::desc({ip_weights_tz}, dt::s8, tag::any);
+    auto ip_dst_md = dnnl::memory::desc({ip_dst_tz}, dt::u8, tag::any);
+
+    auto ip_desc = dnnl::inner_product_forward::desc(dnnl::prop_kind::forward_training, ip_src_md,
+                    ip_weights_md, ip_bias_md, ip_dst_md);
+    dnnl::primitive_attr ip_attr;
+    ip_attr.set_output_scales(ip_mask, ip_scales);
+    
+    const float ops_scale = 1.f;
+    const float ops_alpha = 0.f; // relu negative slope
+    const float ops_beta = 0.f;
+    dnnl::post_ops ops;
+    ops.append_eltwise(ops_scale, dnnl::algorithm::eltwise_relu, ops_alpha, ops_beta);
+    ip_attr.set_post_ops(ops);
+
+    // try {
+    //   auto ip_pd = dnnl::inner_product_forward::primitive_desc(
+    //       ip_desc, ip_attr, engine_);
+    // } catch (error &e) {
+    //   if (e.status == dnnl_unimplemented)
+    //       throw example_allows_unimplemented {
+    //               "No int8 ip implementation is available for this "
+    //               "platform.\n"
+    //               "Please refer to the developer guide for details."};
+
+    //   // on any other error just re-throw
+    //   throw;
+    // }
+
+    auto ip_pd = dnnl::inner_product_forward::primitive_desc(
+            ip_desc, ip_attr, engine_);
+
+    // Set input-end memories
+    auto ip_src_memory = dnnl::memory(ip_pd.src_desc(), engine_);
+    dnnl::primitive_attr src_attr;
+    src_attr.set_output_scales(src_mask, data_scales);
+    auto src_reorder_pd
+            = dnnl::reorder::primitive_desc(engine_, user_src_memory.get_desc(), engine_,
+                    ip_src_memory.get_desc(), src_attr);
+    auto src_reorder = dnnl::reorder(src_reorder_pd);
+    net_.push_back(src_reorder);
+    net_args_.push_back({{DNNL_ARG_SRC, user_src_memory},
+                {DNNL_ARG_DST, ip_src_memory}});
+
+    auto ip_weights_memory = dnnl::memory(ip_pd.weights_desc(), engine_);
+    dnnl::primitive_attr weight_attr;
+    weight_attr.set_output_scales(weight_mask, weight_scales);
+    auto weight_reorder_pd
+            = dnnl::reorder::primitive_desc(engine_, user_wei_memory.get_desc(), engine_,
+                    ip_weights_memory.get_desc(), weight_attr);
+    auto weight_reorder = dnnl::reorder(weight_reorder_pd);
+    net_.push_back(weight_reorder);
+    net_args_.push_back({{DNNL_ARG_SRC, user_wei_memory},
+                {DNNL_ARG_DST, ip_weights_memory}});
+
+    auto ip_bias_memory = dnnl::memory(ip_pd.bias_desc(), engine_);
+    dnnl::primitive_attr bias_attr;
+    bias_attr.set_output_scales(bias_mask, bias_scales);
+    auto bias_reorder_pd
+            = dnnl::reorder::primitive_desc(engine_, user_bia_memory.get_desc(), engine_,
+                    ip_bias_memory.get_desc(), bias_attr);
+    auto bias_reorder = dnnl::reorder(bias_reorder_pd);
+    net_.push_back(bias_reorder);
+    net_args_.push_back({{DNNL_ARG_SRC, user_bia_memory},
+                {DNNL_ARG_DST, ip_bias_memory}});
+
+    auto ip_dst_memory = dnnl::memory(ip_pd.dst_desc(), engine_);
+    // end
+
+    auto ip_prim = dnnl::inner_product_forward(ip_pd);
+    net_.push_back(ip_prim);
+    net_args_.push_back({{DNNL_ARG_SRC, ip_src_memory},
+                {DNNL_ARG_WEIGHTS, ip_weights_memory},
+                {DNNL_ARG_BIAS, ip_bias_memory},
+                {DNNL_ARG_DST, ip_dst_memory}});
+
+    auto user_dst_md = dnnl::memory::desc({ip_dst_tz, dt::f32, tag::ab});
+    auto user_dst_memory = BindDNNLMemory(out_entry, user_dst_md);
+    dnnl::primitive_attr dst_attr;
+    dst_attr.set_output_scales(dst_mask, dst_scales);
+    auto dst_reorder_pd
+            = dnnl::reorder::primitive_desc(engine_, ip_dst_memory.get_desc(), engine_,
+                    user_dst_memory.get_desc(), dst_attr);
+    auto dst_reorder = dnnl::reorder(dst_reorder_pd);
+
+    net_.push_back(dst_reorder);
+    net_args_.push_back({{DNNL_ARG_SRC, ip_dst_memory},
+                {DNNL_ARG_DST, user_dst_memory}});
+
+    std::cout << "primitives created successfully" << std::endl;
   }
 
   void Convolution(const size_t& nid) {

@@ -218,19 +218,20 @@ class JSONRuntimeBase : public ModuleNode {
     std::cout << "setup constants is done" << std::endl;
     std::cout << consts.size() << std::endl;
     for (size_t i = 0; i < consts.size(); ++i) {
+      std::cout << "EntryID(const_idx_[i], 0)" << EntryID(const_idx_[i], 0) << std::endl;
       data_entry_[EntryID(const_idx_[i], 0)] = consts[i].operator->();
-      {
-        std::cout << "shape of const[" << i << "]:" << std::endl;
-        int n_dims = data_entry_[EntryID(const_idx_[i], 0)]->ndim;
-        std::cout << "n_dims: " << n_dims << std::endl;
-        int64_t* ptr = data_entry_[EntryID(const_idx_[i], 0)]->shape;
-        for (int d = 0; d < n_dims; d++) {
-          std::cout << *(ptr + d) << " ";
-        }
-        std::cout << std::endl;
-      }
+      // {
+      //   std::cout << "shape of const[" << i << "]:" << std::endl;
+      //   int n_dims = data_entry_[EntryID(const_idx_[i], 0)]->ndim;
+      //   std::cout << "n_dims: " << n_dims << std::endl;
+      //   int64_t* ptr = data_entry_[EntryID(const_idx_[i], 0)]->shape;
+      //   for (int d = 0; d < n_dims; d++) {
+      //     std::cout << *(ptr + d) << " ";
+      //   }
+      //   std::cout << std::endl;
+      // }
 
-      std::cout << *(float*)(data_entry_[EntryID(const_idx_[i], 0)]->data) << std::endl;
+      // std::cout << *(float*)(data_entry_[EntryID(const_idx_[i], 0)]->data) << std::endl;
     }
   }
 
