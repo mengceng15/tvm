@@ -82,20 +82,20 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       size_t offset_in_bytes = entry_out_mem_[eid].second * 4;
       size_t buffer_size = GetDataSize(*data_entry_[eid]);
 
-      // {
-      //   std::cout << "shape of input[" << i << "]:" << std::endl;
-      //   int n_dims = data_entry_[eid]->ndim;
-      //   std::cout << "n_dims: " << n_dims << std::endl;
-      //   int64_t* ptr = data_entry_[eid]->shape;
-      //   for (int d = 0; d < n_dims; d++) {
-      //     std::cout << *(ptr + d) << " ";
-      //   }
-      //   std::cout << *((float*) data_entry_[eid]->data) << std::endl;
-      //   // if (n_dims == 0) {
-      //   //   std::cout << *ptr << std::endl;
-      //   // }
-      //   std::cout << std::endl;
-      // }
+      {
+        std::cout << "shape of input[" << i << "]:" << std::endl;
+        int n_dims = data_entry_[eid]->ndim;
+        std::cout << "n_dims: " << n_dims << std::endl;
+        int64_t* ptr = data_entry_[eid]->shape;
+        for (int d = 0; d < n_dims; d++) {
+          std::cout << *(ptr + d) << " ";
+        }
+        std::cout << *((float*) data_entry_[eid]->data) << std::endl;
+        // if (n_dims == 0) {
+        //   std::cout << *ptr << std::endl;
+        // }
+        std::cout << std::endl;
+      }
 
       write_to_dnnl_memory(data_entry_[eid]->data, entry_out_mem_[eid].first, buffer_size,
                            offset_in_bytes);
@@ -361,6 +361,14 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     auto data_entry = node.GetInputs()[0];
     auto weight_entry = node.GetInputs()[1];
     // auto bias_entry = node.GetInputs()[2];
+
+    // auto data_scale_entry = node.GetInputs()[2];
+    // auto data_min_entry = node.GetInputs()[3];
+    // auto data_max_entry = node.GetInputs()[4];
+    // auto weight_scale_entry = node.GetInputs()[5];
+    // auto weight_min_entry = node.GetInputs()[6];
+    // auto weight_max_entry = node.GetInputs()[7];
+
     JSONGraphNodeEntry out_entry(nid, 0);
 
 #define GET_NODE_INFO(n) \
@@ -380,7 +388,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     GET_NODE_INFO(4)
     GET_NODE_INFO(5)
     GET_NODE_INFO(6)
-    // GET_NODE_INFO(7) // not const cannot get
+    // GET_NODE_INFO(7)
 
     std::cout << "nodes_ size: " << nodes_.size() << std::endl;
     std::cout << "node input size: " << node.GetInputs().size() << std::endl;
@@ -392,6 +400,8 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     int64_t M = input_shape[0];
     int64_t K = input_shape[1];
     int64_t N = weight_shape[0];
+
+    /*
     std::cout << "M: " << M << " " << "K: " << K << " " << "N: " << N << std::endl;
 
     std::cout << "input_shape: ";
@@ -404,6 +414,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       std::cout << e << " ";
     }
     std::cout << std::endl;
+    */
 
     std::vector<float> data_scales;
     std::vector<float> weight_scales;
@@ -418,17 +429,20 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     for (uint32_t i = 0; i < this->GetDataCount(*const4_tensor_ptr); i++) {
       weight_scales.push_back(*((float*)const4_tensor_ptr->data + i));
     }
-    // std::cout << "data_scales: " << std::endl;
-    // for (auto e : data_scales) {
-    //   std::cout << e << " ";
-    // }
-    // std::cout << std::endl;
 
-    // std::cout << "weight_scales: " << std::endl;
-    // for (auto e : weight_scales) {
-    //   std::cout << e << " ";
-    // }
-    // std::cout << std::endl;
+    /*
+    std::cout << "data_scales: " << std::endl;
+    for (auto e : data_scales) {
+      std::cout << e << " ";
+    }
+    std::cout << std::endl;
+
+    std::cout << "weight_scales: " << std::endl;
+    for (auto e : weight_scales) {
+      std::cout << e << " ";
+    }
+    std::cout << std::endl;
+    */
 
     dnnl::memory::dims ip_src_tz = {M, K};
     dnnl::memory::dims ip_weights_tz = {N, K};
@@ -445,12 +459,25 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     auto user_wei_md = dnnl::memory::desc({ip_weights_tz, dt::f32, tag::ab});
     auto user_bia_md = dnnl::memory::desc({ip_bias_tz, dt::f32, tag::x});
 
-    auto user_src_memory = BindDNNLMemory(data_entry, user_src_md);
-    auto user_wei_memory = BindDNNLMemory(weight_entry, user_wei_md);
+    // auto user_src_memory = BindDNNLMemory(data_entry, user_src_md);
+    // auto user_wei_memory = BindDNNLMemory(weight_entry, user_wei_md);
     // auto user_bia_memory = BindDNNLMemory(bias_entry, user_bia_md);
+    auto user_src_memory = BindDNNLMemory(node.GetInputs()[0], user_src_md);
+    auto user_wei_memory = BindDNNLMemory(node.GetInputs()[7], user_wei_md);
     auto user_bia_memory = dnnl::memory(user_bia_md, engine_);
     float bias[N] = {0};
     write_to_dnnl_memory(bias, user_bia_memory, N * sizeof(float));
+
+    // debug
+    dnnl::memory::dims ip_const_tz = {1};
+    auto user_const_md = dnnl::memory::desc({ip_const_tz, dt::f32, tag::x});
+    auto user_data_scale_memory = BindDNNLMemory(node.GetInputs()[1], user_const_md);
+    auto user_data_min_memory = BindDNNLMemory(node.GetInputs()[2], user_const_md);
+    auto user_data_max_memory = BindDNNLMemory(node.GetInputs()[3], user_const_md);
+    auto user_weight_scale_memory = BindDNNLMemory(node.GetInputs()[4], user_const_md);
+    auto user_weight_min_memory = BindDNNLMemory(node.GetInputs()[5], user_const_md);
+    auto user_weight_max_memory = BindDNNLMemory(node.GetInputs()[6], user_const_md);
+    // debug end
     
     auto ip_src_md = dnnl::memory::desc({ip_src_tz}, dt::u8, tag::any);
     auto ip_bias_md = dnnl::memory::desc({ip_bias_tz}, dt::s8, tag::any);
@@ -469,19 +496,21 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     ops.append_eltwise(ops_scale, dnnl::algorithm::eltwise_relu, ops_alpha, ops_beta);
     ip_attr.set_post_ops(ops);
 
-    // try {
-    //   auto ip_pd = dnnl::inner_product_forward::primitive_desc(
-    //       ip_desc, ip_attr, engine_);
-    // } catch (error &e) {
-    //   if (e.status == dnnl_unimplemented)
-    //       throw example_allows_unimplemented {
-    //               "No int8 ip implementation is available for this "
-    //               "platform.\n"
-    //               "Please refer to the developer guide for details."};
+    /*
+    try {
+      auto ip_pd = dnnl::inner_product_forward::primitive_desc(
+          ip_desc, ip_attr, engine_);
+    } catch (error &e) {
+      if (e.status == dnnl_unimplemented)
+          throw example_allows_unimplemented {
+                  "No int8 ip implementation is available for this "
+                  "platform.\n"
+                  "Please refer to the developer guide for details."};
 
-    //   // on any other error just re-throw
-    //   throw;
-    // }
+      // on any other error just re-throw
+      throw;
+    }
+    */
 
     auto ip_pd = dnnl::inner_product_forward::primitive_desc(
             ip_desc, ip_attr, engine_);
