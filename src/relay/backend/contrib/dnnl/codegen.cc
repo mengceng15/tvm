@@ -459,6 +459,13 @@ class DNNLJSONSerializer : public backend::contrib::JSONSerializer {
       op_list.push_back("nn.relu");
       return op_list;
     }
+    if ("dnnl.qint8_conv2d" == pattern_name) {
+      op_list.push_back("nn.conv2d");
+      op_list.push_back("relay.op.annotation.simulated_quantize");
+      op_list.push_back("annotation.cast_hint");
+      op_list.push_back("annotation.stop_fusion");
+      return op_list;
+    }
     while ((pos = pattern_name.find(interval, start)) != std::string::npos) {
       std::string op_name = pattern_name.substr(start, pos - start);
       if (op_name.find("dnnl") != std::string::npos) {
@@ -524,6 +531,12 @@ class DNNLJSONSerializer : public backend::contrib::JSONSerializer {
         std::cout << std::endl;
         call = GetRootCall(fn->body.as<CallNode>(), op_list.size() - 1, op_list);
         ICHECK(call->op.as<OpNode>()) << "Not op node";
+      } else if ("dnnl.qint8_conv2d" == name) {
+        std::vector<std::string> op_list = ParsingOpList(name);
+        std::cout << fn->body.as<CallNode>() << std::endl;
+        call = GetRootCall(fn->body.as<CallNode>(), op_list.size() - 1, op_list);
+        ICHECK(call->op.as<OpNode>()) << "Not op node";
+        std::cout << call->op.as<OpNode>()->name << std::endl;
       } else {
         LOG(FATAL) << "Unrecognized DNNL pattern: " << name;
       }
@@ -535,17 +548,37 @@ class DNNLJSONSerializer : public backend::contrib::JSONSerializer {
     std::cout << "DEBUG" << std::endl;
     std::cout << cn->args << std::endl;
 
-    std::cout << cn->op.as<FunctionNode>()
-      ->body.as<CallNode>()
-      ->args[0].as<CallNode>()
-      ->args[0].as<CallNode>()
-      ->args << std::endl;
+    // std::cout << cn->op.as<FunctionNode>()
+    //   ->body.as<CallNode>()
+    //   ->args[0].as<CallNode>()
+    //   ->args[0].as<CallNode>()
+    //   ->args << std::endl;
+
+    // std::cout << cn->op.as<FunctionNode>()
+    //   ->body.as<CallNode>()
+    //   ->args[0].as<CallNode>()
+    //   ->args[1].as<CallNode>()
+    //   ->args << std::endl;
 
     std::cout << cn->op.as<FunctionNode>()
-      ->body.as<CallNode>()
-      ->args[0].as<CallNode>()
-      ->args[1].as<CallNode>()
-      ->args << std::endl;
+        ->body.as<CallNode>()->args[0].as<CallNode>()
+        ->args[0].as<CallNode>()
+        ->args[0].as<CallNode>()
+        ->args[0].as<CallNode>()
+        ->args << std::endl;
+      
+    std::cout << cn->op.as<FunctionNode>()
+        ->body.as<CallNode>()->args[0].as<CallNode>()
+        ->args[0].as<CallNode>()
+        ->args[0].as<CallNode>()
+        ->args[1].as<CallNode>()
+        ->args << std::endl;
+
+    std::cout << cn->op.as<FunctionNode>()
+        ->body.as<CallNode>()->args[0].as<CallNode>()
+        ->args[0].as<CallNode>()
+        ->args;
+
     std::cout << "DEBUG" << std::endl;
 
     for (const auto& arg : cn->args) {
@@ -576,6 +609,47 @@ class DNNLJSONSerializer : public backend::contrib::JSONSerializer {
         }
       }
     } 
+
+    if ("dnnl.qint8_conv2d" == name) {
+//print(mod['tvmgen_default_dnnl_main_0'].body.op.body.args[0].args[0].args[0].args[0].args)
+//print(mod['tvmgen_default_dnnl_main_0'].body.op.body.args[0].args[0].args[0].args[1].args)
+//print(mod['tvmgen_default_dnnl_main_0'].body.op.body.args[0].args[0].args)
+      auto data_args = cn->op.as<FunctionNode>()
+        ->body.as<CallNode>()->args[0].as<CallNode>()
+        ->args[0].as<CallNode>()
+        ->args[0].as<CallNode>()
+        ->args[0].as<CallNode>()
+        ->args;
+      auto weight_args = cn->op.as<FunctionNode>()
+        ->body.as<CallNode>()->args[0].as<CallNode>()
+        ->args[0].as<CallNode>()
+        ->args[0].as<CallNode>()
+        ->args[1].as<CallNode>()
+        ->args;
+      auto conv2d_args = cn->op.as<FunctionNode>()
+        ->body.as<CallNode>()->args[0].as<CallNode>()
+        ->args[0].as<CallNode>()
+        ->args;
+
+      for (const auto& arg : data_args) {
+        if (arg.as<ConstantNode>()) {
+          auto res = VisitExpr(arg);
+          inputs.insert(inputs.end(), res.begin(), res.end());
+        }
+      }
+      for (const auto& arg : weight_args) {
+        if (arg.as<ConstantNode>()) {
+          auto res = VisitExpr(arg);
+          inputs.insert(inputs.end(), res.begin(), res.end());
+        }
+      }
+      for (const auto& arg : conv2d_args) {
+        if (arg.as<ConstantNode>()) {
+          auto res = VisitExpr(arg);
+          inputs.insert(inputs.end(), res.begin(), res.end());
+        }
+      }
+    }
 
     std::cout << "inputs.size(): " << inputs.size() << std::endl;
     std::cout << "cn->args: " << cn->args.size() << std::endl;

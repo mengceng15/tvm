@@ -94,6 +94,8 @@ _register_external_op_helper("nn.softmax")
 _register_external_op_helper("add")
 _register_external_op_helper("multiply")
 _register_external_op_helper("relay.op.annotation.simulated_quantize")
+_register_external_op_helper("annotation.cast_hint")
+_register_external_op_helper("annotation.stop_fusion")
 
 def make_qint8_dense_pattern():
     pattern_name = "dnnl.qint8_dense_relu"
@@ -110,6 +112,29 @@ def make_qint8_dense_pattern():
     dense = is_op("nn.dense")(quantx, quantw)
     relu = is_op("nn.relu")(dense)
     return (pattern_name, relu)
+
+def make_qint8_conv2d_pattern():
+    pattern_name = "dnnl.qint8_conv2d"
+    datax = wildcard()
+    datax_c1 = is_constant()
+    datax_c2 = is_constant()
+    datax_c3 = is_constant()
+    dataw = wildcard()
+    dataw_c1 = is_constant()
+    dataw_c2 = is_constant()
+    dataw_c3 = is_constant()
+    conv2d_c1 = is_constant()
+    conv2d_c2 = is_constant()
+    conv2d_c3 = is_constant()
+    quantx = is_op("relay.op.annotation.simulated_quantize")(datax, datax_c1, datax_c2, datax_c3)
+    quantw = is_op("relay.op.annotation.simulated_quantize")(dataw, dataw_c1, dataw_c2, dataw_c3)
+    conv2d = is_op("nn.conv2d")(quantx, quantw)
+    qconv2d = is_op("relay.op.annotation.simulated_quantize")(conv2d, conv2d_c1, conv2d_c2, conv2d_c3)
+    cast_qconv2d = is_op("annotation.cast_hint")(qconv2d)
+    stopf_qconv2d = is_op("annotation.stop_fusion")(cast_qconv2d)
+    return (pattern_name, stopf_qconv2d)
+
+
 
 def make_conv_pattern(conv_name, with_bias=True, with_eltwise=None):
     """Create patterns related to conv and conv_transpose.
@@ -212,6 +237,7 @@ def pattern_table():
     elt_list = ["nn.relu", "tanh", "sigmoid", None]
     dnnl_patterns = []
     dnnl_patterns.append(make_qint8_dense_pattern())
+    dnnl_patterns.append(make_qint8_conv2d_pattern())
     for with_bias in [True, False]:
         for elt in elt_list:
             if not with_bias and not elt:

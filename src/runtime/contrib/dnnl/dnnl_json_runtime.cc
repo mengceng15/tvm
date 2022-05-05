@@ -78,6 +78,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
 
     for (size_t i = 0; i < input_nodes_.size(); ++i) {
       auto eid = EntryID(input_nodes_[i], 0);
+      std::cout << "current eid: " << eid << std::endl;
       // TODO(@comaniac): Support other data lengths.
       size_t offset_in_bytes = entry_out_mem_[eid].second * 4;
       size_t buffer_size = GetDataSize(*data_entry_[eid]);
@@ -87,10 +88,17 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
         int n_dims = data_entry_[eid]->ndim;
         std::cout << "n_dims: " << n_dims << std::endl;
         int64_t* ptr = data_entry_[eid]->shape;
+        int size = 1;
         for (int d = 0; d < n_dims; d++) {
           std::cout << *(ptr + d) << " ";
+          size *= *(ptr + d);
         }
-        std::cout << *((float*) data_entry_[eid]->data) << std::endl;
+
+        for (int i = 0; i < size; i++) {
+          std::cout << *((float*) data_entry_[eid]->data + i) << " ";
+        }
+        std::cout << std::endl;
+        
         // if (n_dims == 0) {
         //   std::cout << *ptr << std::endl;
         // }
@@ -288,8 +296,9 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
         auto op_name = node.GetOpName();
         std::cout << "OP_NAME(runtime): " << op_name << std::endl;
         if ("dnnl.qint8_dense_relu" == op_name) {
-          std::cout << "yes" << std::endl;
           Qint8_Dense_RELU(nid);
+        } else if ("dnnl.qint8_conv2d" == op_name) {
+          Qint8_Conv2d(nid);
         } else if (std::regex_match(op_name, deconv_pat) ||
             std::regex_match(op_name, conv_transpose_pat)) {
           Deconvolution(nid);
@@ -419,7 +428,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     std::vector<float> data_scales;
     std::vector<float> weight_scales;
     std::vector<float> bias_scales = {1.0f};
-    std::vector<float> dst_scales = {1.0f}; // What is this?
+    std::vector<float> dst_scales; // What is this?
     std::vector<float> ip_scales = {1.0f};
 
     for (uint32_t i = 0; i < this->GetDataCount(*const1_tensor_ptr); i++) {
@@ -430,7 +439,10 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       weight_scales.push_back(*((float*)const4_tensor_ptr->data + i));
     }
 
-    /*
+    for (uint32_t i = 0; i < this->GetDataCount(*const1_tensor_ptr); i++) {
+      dst_scales.push_back(1 / (data_scales[i] * weight_scales[i]));
+    }
+
     std::cout << "data_scales: " << std::endl;
     for (auto e : data_scales) {
       std::cout << e << " ";
@@ -442,7 +454,12 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
       std::cout << e << " ";
     }
     std::cout << std::endl;
-    */
+
+    std::cout << "dst_scales: " << std::endl;
+    for (auto e : dst_scales) {
+      std::cout << e << " ";
+    }
+    std::cout << std::endl;
 
     dnnl::memory::dims ip_src_tz = {M, K};
     dnnl::memory::dims ip_weights_tz = {N, K};
@@ -573,6 +590,187 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
                 {DNNL_ARG_DST, user_dst_memory}});
 
     std::cout << "primitives created successfully" << std::endl;
+  }
+
+  void Qint8_Conv2d(const size_t& nid) {
+    std::cout << "Qint8_Conv2d" << std::endl;
+    auto node = nodes_[nid];
+    auto op_name = node.GetOpName();
+
+    std::cout << "Node number of inputs: " << node.GetInputs().size() << std::endl;
+    auto data_entry = node.GetInputs()[0];
+    auto weight_entry = node.GetInputs()[1];
+
+    JSONGraphNodeEntry out_entry(nid, 0);
+
+#define GET_NODE_INFO(n) \
+  int const##n##_json_node_entry_id = EntryID(node.GetInputs()[n].id_, 0); \
+  std::cout << node.GetInputs()[n].id_ << std::endl;\
+  std::cout << node.GetInputs()[n].index_ << std::endl;\
+  std::cout << "const node json node entry id: " << const##n##_json_node_entry_id << std::endl; \
+  auto const##n##_tensor_ptr = data_entry_[const##n##_json_node_entry_id]; \
+  auto const##n##_ndim = const##n##_tensor_ptr->ndim; \
+  std::cout << "data count: " << this->GetDataCount(*const##n##_tensor_ptr) << std::endl; \
+  std::cout << "First elemt of const node: " << *((float*)const##n##_tensor_ptr->data) << '\n' << std::endl;
+
+    // GET_NODE_INFO(0) // not const cannot get
+    GET_NODE_INFO(1)
+    GET_NODE_INFO(2)
+    GET_NODE_INFO(3)
+    GET_NODE_INFO(4)
+    GET_NODE_INFO(5)
+    GET_NODE_INFO(6)
+    GET_NODE_INFO(7)
+    GET_NODE_INFO(8)
+    GET_NODE_INFO(9)
+    // GET_NODE_INFO(10)
+
+    std::cout << "nodes_ size: " << nodes_.size() << std::endl;
+    std::cout << "node input size: " << node.GetInputs().size() << std::endl;
+    // nodes_ is global, node is local
+    dnnl::memory::dims conv_src_tz = nodes_[data_entry.id_].GetOpShape()[data_entry.index_];
+    dnnl::memory::dims conv_weights_tz = nodes_[weight_entry.id_].GetOpShape()[weight_entry.index_];
+    dnnl::memory::dims conv_dst_tz = nodes_[out_entry.id_].GetOpShape()[out_entry.index_];
+    dnnl::memory::dim out_channel = conv_weights_tz[0];
+    dnnl::memory::dims conv_bias_tz = {out_channel};
+
+    std::vector<std::string> str_strides = node.GetAttr<std::vector<std::string>>("strides");
+    std::vector<std::string> str_dilates = node.GetAttr<std::vector<std::string>>("dilation");
+    std::vector<std::string> str_padding = node.GetAttr<std::vector<std::string>>("padding");
+
+    dnnl::memory::dims conv_strides = TransformStr2Dims(str_strides);
+    dnnl::memory::dims conv_dilates = TransformStr2Dims(str_dilates, true);
+    dnnl::memory::dims conv_padding = TransformStr2Dims(str_padding);
+
+    std::vector<float> data_scales;
+    std::vector<float> weight_scales;
+    std::vector<float> bias_scales = {1.0f};
+    std::vector<float> dst_scales; // What is this?
+    std::vector<float> conv_scales;
+
+    for (uint32_t i = 0; i < this->GetDataCount(*const1_tensor_ptr); i++) {
+      data_scales.push_back(*((float*)const1_tensor_ptr->data + i));
+    }
+
+    for (uint32_t i = 0; i < this->GetDataCount(*const4_tensor_ptr); i++) {
+      weight_scales.push_back(*((float*)const4_tensor_ptr->data + i));
+    }
+
+    for (uint32_t i = 0; i < this->GetDataCount(*const1_tensor_ptr); i++) {
+      dst_scales.push_back(1 / (data_scales[i] * weight_scales[i]));
+    }
+
+    for (uint32_t i = 0; i < this->GetDataCount(*const7_tensor_ptr); i++) {
+      conv_scales.push_back(*((float*)const7_tensor_ptr->data + i));
+    }
+
+    const int src_mask = 0;
+    const int weight_mask = 0;
+    const int bias_mask = 0;
+    const int dst_mask = 0;
+    const int conv_mask = 0;
+
+    auto user_src_md = dnnl::memory::desc({conv_src_tz, dt::f32, tag::nchw});
+    auto user_wei_md = dnnl::memory::desc({conv_weights_tz, dt::f32, tag::iohw});
+    auto user_bia_md = dnnl::memory::desc({conv_bias_tz, dt::f32, tag::x});
+
+    auto user_src_memory = BindDNNLMemory(node.GetInputs()[0], user_src_md);
+    auto user_wei_memory = BindDNNLMemory(node.GetInputs()[10], user_wei_md);
+    auto user_bia_memory = dnnl::memory(user_bia_md, engine_);
+    float bias[out_channel] = {0};
+    write_to_dnnl_memory(bias, user_bia_memory, out_channel * sizeof(float));
+
+    // debug
+    dnnl::memory::dims conv_const_tz = {1};
+    auto user_const_md = dnnl::memory::desc({conv_const_tz, dt::f32, tag::x});
+    auto user_data_scale_memory = BindDNNLMemory(node.GetInputs()[1], user_const_md);
+    auto user_data_min_memory = BindDNNLMemory(node.GetInputs()[2], user_const_md);
+    auto user_data_max_memory = BindDNNLMemory(node.GetInputs()[3], user_const_md);
+    auto user_weight_scale_memory = BindDNNLMemory(node.GetInputs()[4], user_const_md);
+    auto user_weight_min_memory = BindDNNLMemory(node.GetInputs()[5], user_const_md);
+    auto user_weight_max_memory = BindDNNLMemory(node.GetInputs()[6], user_const_md);
+    auto user_conv_scale_memory = BindDNNLMemory(node.GetInputs()[7], user_const_md);
+    auto user_conv_min_memory = BindDNNLMemory(node.GetInputs()[8], user_const_md);
+    auto user_conv_max_memory = BindDNNLMemory(node.GetInputs()[9], user_const_md);
+    // debug end
+
+    auto conv_src_md = dnnl::memory::desc({conv_src_tz}, dt::u8, tag::any);
+    auto conv_bias_md = dnnl::memory::desc({conv_bias_tz}, dt::s8, tag::any);
+    auto conv_weights_md = dnnl::memory::desc({conv_weights_tz}, dt::s8, tag::any);
+    auto conv_dst_md = dnnl::memory::desc({conv_dst_tz}, dt::u8, tag::any);
+
+    auto conv_desc = dnnl::convolution_forward::desc(dnnl::prop_kind::forward,
+        dnnl::algorithm::convolution_direct, conv_src_md, conv_weights_md,
+        conv_bias_md, conv_dst_md, conv_strides, conv_padding,
+        conv_padding);
+
+    dnnl::primitive_attr conv_attr;
+    conv_attr.set_output_scales(conv_mask, conv_scales);
+   
+    // const float ops_scale = 1.f;
+    // const float ops_alpha = 0.f; // relu negative slope
+    // const float ops_beta = 0.f;
+    // dnnl::post_ops ops;
+    // ops.append_eltwise(ops_scale, dnnl::algorithm::eltwise_relu, ops_alpha, ops_beta);
+    // conv_attr.set_post_ops(ops);
+    auto conv_prim_desc
+            = dnnl::convolution_forward::primitive_desc(conv_desc, conv_attr, engine_);
+
+    auto conv_src_memory = dnnl::memory(conv_prim_desc.src_desc(), engine_);
+    dnnl::primitive_attr src_attr;
+    src_attr.set_output_scales(src_mask, data_scales);
+    auto src_reorder_pd
+            = dnnl::reorder::primitive_desc(engine_, user_src_memory.get_desc(), engine_,
+                    conv_src_memory.get_desc(), src_attr);
+    auto src_reorder = dnnl::reorder(src_reorder_pd);
+    net_.push_back(src_reorder);
+    net_args_.push_back({{DNNL_ARG_SRC, user_src_memory},
+                {DNNL_ARG_DST, conv_src_memory}});
+
+    auto conv_wei_memory = dnnl::memory(conv_prim_desc.weights_desc(), engine_);
+    dnnl::primitive_attr wei_attr;
+    wei_attr.set_output_scales(weight_mask, weight_scales);
+    auto wei_reorder_pd
+            = dnnl::reorder::primitive_desc(engine_, user_wei_memory.get_desc(), engine_,
+                    conv_wei_memory.get_desc(), wei_attr);
+    auto wei_reorder = dnnl::reorder(wei_reorder_pd);
+    net_.push_back(wei_reorder);
+    net_args_.push_back({{DNNL_ARG_SRC, user_wei_memory},
+                {DNNL_ARG_DST, conv_wei_memory}});
+
+    auto conv_bia_memory = dnnl::memory(conv_prim_desc.bias_desc(), engine_);
+    dnnl::primitive_attr bia_attr;
+    bia_attr.set_output_scales(bias_mask, bias_scales);
+    auto bia_reorder_pd
+            = dnnl::reorder::primitive_desc(engine_, user_bia_memory.get_desc(), engine_,
+                    conv_bia_memory.get_desc(), bia_attr);
+    auto bia_reorder = dnnl::reorder(bia_reorder_pd);
+    net_.push_back(bia_reorder);
+    net_args_.push_back({{DNNL_ARG_SRC, user_bia_memory},
+                {DNNL_ARG_DST, conv_bia_memory}});
+
+    auto conv_dst_memory = dnnl::memory(conv_prim_desc.dst_desc(), engine_);
+
+    // here
+    auto conv_prim = dnnl::convolution_forward(conv_prim_desc);
+    net_.push_back(conv_prim);
+    net_args_.push_back({{DNNL_ARG_SRC, conv_src_memory},
+                {DNNL_ARG_WEIGHTS, conv_wei_memory},
+                {DNNL_ARG_BIAS, conv_bia_memory},
+                {DNNL_ARG_DST, conv_dst_memory}});
+
+    auto user_dst_md = dnnl::memory::desc({conv_dst_tz, dt::f32, tag::nchw});
+    auto user_dst_memory = BindDNNLMemory(out_entry, user_dst_md);
+    dnnl::primitive_attr dst_attr;
+    dst_attr.set_output_scales(dst_mask, dst_scales);
+    auto dst_reorder_pd
+            = dnnl::reorder::primitive_desc(engine_, conv_dst_memory.get_desc(), engine_,
+                    user_dst_memory.get_desc(), dst_attr);
+    auto dst_reorder = dnnl::reorder(dst_reorder_pd);
+
+    net_.push_back(dst_reorder);
+    net_args_.push_back({{DNNL_ARG_SRC, conv_dst_memory},
+                {DNNL_ARG_DST, user_dst_memory}});
   }
 
   void Convolution(const size_t& nid) {
