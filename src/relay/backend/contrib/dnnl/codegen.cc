@@ -545,8 +545,8 @@ class DNNLJSONSerializer : public backend::contrib::JSONSerializer {
     }
 
     std::vector<JSONGraphNodeEntry> inputs;
-    std::cout << "DEBUG" << std::endl;
-    std::cout << cn->args << std::endl;
+    // std::cout << "DEBUG" << std::endl;
+    // std::cout << cn->args << std::endl;
 
     // std::cout << cn->op.as<FunctionNode>()
     //   ->body.as<CallNode>()
@@ -560,26 +560,26 @@ class DNNLJSONSerializer : public backend::contrib::JSONSerializer {
     //   ->args[1].as<CallNode>()
     //   ->args << std::endl;
 
-    std::cout << cn->op.as<FunctionNode>()
-        ->body.as<CallNode>()->args[0].as<CallNode>()
-        ->args[0].as<CallNode>()
-        ->args[0].as<CallNode>()
-        ->args[0].as<CallNode>()
-        ->args << std::endl;
+    // std::cout << cn->op.as<FunctionNode>()
+    //     ->body.as<CallNode>()->args[0].as<CallNode>()
+    //     ->args[0].as<CallNode>()
+    //     ->args[0].as<CallNode>()
+    //     ->args[0].as<CallNode>()
+    //     ->args << std::endl;
       
-    std::cout << cn->op.as<FunctionNode>()
-        ->body.as<CallNode>()->args[0].as<CallNode>()
-        ->args[0].as<CallNode>()
-        ->args[0].as<CallNode>()
-        ->args[1].as<CallNode>()
-        ->args << std::endl;
+    // std::cout << cn->op.as<FunctionNode>()
+    //     ->body.as<CallNode>()->args[0].as<CallNode>()
+    //     ->args[0].as<CallNode>()
+    //     ->args[0].as<CallNode>()
+    //     ->args[1].as<CallNode>()
+    //     ->args << std::endl;
 
-    std::cout << cn->op.as<FunctionNode>()
-        ->body.as<CallNode>()->args[0].as<CallNode>()
-        ->args[0].as<CallNode>()
-        ->args;
+    // std::cout << cn->op.as<FunctionNode>()
+    //     ->body.as<CallNode>()->args[0].as<CallNode>()
+    //     ->args[0].as<CallNode>()
+    //     ->args;
 
-    std::cout << "DEBUG" << std::endl;
+    // std::cout << "DEBUG" << std::endl;
 
     for (const auto& arg : cn->args) {
       auto res = VisitExpr(arg);

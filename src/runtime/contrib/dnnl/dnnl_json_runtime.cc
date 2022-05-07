@@ -432,15 +432,11 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     std::vector<float> ip_scales = {1.0f};
 
     for (uint32_t i = 0; i < this->GetDataCount(*const1_tensor_ptr); i++) {
-      data_scales.push_back(*((float*)const1_tensor_ptr->data + i));
-    }
-
-    for (uint32_t i = 0; i < this->GetDataCount(*const4_tensor_ptr); i++) {
-      weight_scales.push_back(*((float*)const4_tensor_ptr->data + i));
-    }
-
-    for (uint32_t i = 0; i < this->GetDataCount(*const1_tensor_ptr); i++) {
-      dst_scales.push_back(1 / (data_scales[i] * weight_scales[i]));
+      float data_scale = *((float*)const1_tensor_ptr->data + i);
+      float weight_scale = *((float*)const4_tensor_ptr->data + i);
+      data_scales.push_back(1.0f / data_scale);
+      weight_scales.push_back(1.0f / weight_scale);
+      dst_scales.push_back(data_scale * weight_scale);
     }
 
     std::cout << "data_scales: " << std::endl;
@@ -499,7 +495,8 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     auto ip_src_md = dnnl::memory::desc({ip_src_tz}, dt::u8, tag::any);
     auto ip_bias_md = dnnl::memory::desc({ip_bias_tz}, dt::s8, tag::any);
     auto ip_weights_md = dnnl::memory::desc({ip_weights_tz}, dt::s8, tag::any);
-    auto ip_dst_md = dnnl::memory::desc({ip_dst_tz}, dt::u8, tag::any);
+    // auto ip_dst_md = dnnl::memory::desc({ip_dst_tz}, dt::u8, tag::any);
+    auto ip_dst_md = dnnl::memory::desc({ip_dst_tz}, dt::s32, tag::any);
 
     auto ip_desc = dnnl::inner_product_forward::desc(dnnl::prop_kind::forward_training, ip_src_md,
                     ip_weights_md, ip_bias_md, ip_dst_md);
@@ -642,27 +639,55 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     dnnl::memory::dims conv_dilates = TransformStr2Dims(str_dilates, true);
     dnnl::memory::dims conv_padding = TransformStr2Dims(str_padding);
 
+    // debug
     std::vector<float> data_scales;
     std::vector<float> weight_scales;
     std::vector<float> bias_scales = {1.0f};
     std::vector<float> dst_scales; // What is this?
-    std::vector<float> conv_scales;
+    std::vector<float> conv_scales = {1.0f}; // what is this?
 
     for (uint32_t i = 0; i < this->GetDataCount(*const1_tensor_ptr); i++) {
-      data_scales.push_back(*((float*)const1_tensor_ptr->data + i));
+      float data_scale = *((float*)const1_tensor_ptr->data + i);
+      float weight_scale = *((float*)const4_tensor_ptr->data + i);
+      // float conv_scale = *((float*)const7_tensor_ptr->data + i);
+      data_scales.push_back(1.0f / data_scale);
+      weight_scales.push_back(1.0f / weight_scale);
+      dst_scales.push_back(data_scale * weight_scale);
     }
 
-    for (uint32_t i = 0; i < this->GetDataCount(*const4_tensor_ptr); i++) {
-      weight_scales.push_back(*((float*)const4_tensor_ptr->data + i));
+    std::cout << "data_scales: " << std::endl;
+    for (auto e : data_scales) {
+      std::cout << e << " ";
     }
+    std::cout << std::endl;
 
-    for (uint32_t i = 0; i < this->GetDataCount(*const1_tensor_ptr); i++) {
-      dst_scales.push_back(1 / (data_scales[i] * weight_scales[i]));
+    std::cout << "weight_scales: " << std::endl;
+    for (auto e : weight_scales) {
+      std::cout << e << " ";
     }
+    std::cout << std::endl;
 
-    for (uint32_t i = 0; i < this->GetDataCount(*const7_tensor_ptr); i++) {
-      conv_scales.push_back(*((float*)const7_tensor_ptr->data + i));
+    std::cout << "dst_scales: " << std::endl;
+    for (auto e : dst_scales) {
+      std::cout << e << " ";
     }
+    std::cout << std::endl;
+
+    // for (uint32_t i = 0; i < this->GetDataCount(*const1_tensor_ptr); i++) {
+    //   data_scales.push_back(*((float*)const1_tensor_ptr->data + i));
+    // }
+
+    // for (uint32_t i = 0; i < this->GetDataCount(*const4_tensor_ptr); i++) {
+    //   weight_scales.push_back(*((float*)const4_tensor_ptr->data + i));
+    // }
+
+    // for (uint32_t i = 0; i < this->GetDataCount(*const1_tensor_ptr); i++) {
+    //   dst_scales.push_back(1 / (data_scales[i] * weight_scales[i]));
+    // }
+
+    // for (uint32_t i = 0; i < this->GetDataCount(*const7_tensor_ptr); i++) {
+    //   conv_scales.push_back(*((float*)const7_tensor_ptr->data + i));
+    // }
 
     const int src_mask = 0;
     const int weight_mask = 0;
@@ -697,7 +722,7 @@ class DNNLJSONRuntime : public JSONRuntimeBase {
     auto conv_src_md = dnnl::memory::desc({conv_src_tz}, dt::u8, tag::any);
     auto conv_bias_md = dnnl::memory::desc({conv_bias_tz}, dt::s8, tag::any);
     auto conv_weights_md = dnnl::memory::desc({conv_weights_tz}, dt::s8, tag::any);
-    auto conv_dst_md = dnnl::memory::desc({conv_dst_tz}, dt::u8, tag::any);
+    auto conv_dst_md = dnnl::memory::desc({conv_dst_tz}, dt::s32, tag::any);
 
     auto conv_desc = dnnl::convolution_forward::desc(dnnl::prop_kind::forward,
         dnnl::algorithm::convolution_direct, conv_src_md, conv_weights_md,
