@@ -21,7 +21,8 @@ set -u
 set -o pipefail
 
 # install libraries for building c++ core on ubuntu
-apt-get update && apt-get install -y --no-install-recommends \
+export DEBIAN_FRONTEND=noninteractive  # avoid tzdata interactive config.
+apt-get update --fix-missing && apt-get install -y --no-install-recommends \
     apt-transport-https \
     ca-certificates \
     cmake \
