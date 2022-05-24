@@ -63,6 +63,7 @@ stage('Build') {
       node('CPU-SMALL') {
         ws({{ m.per_exec_ws('tvm/build-gpu') }}) {
           init_git()
+          docker_init(ci_gpu)
           sh "${docker_run} --no-gpu ${ci_gpu} ./tests/scripts/task_config_build_gpu.sh build"
           make("${ci_gpu} --no-gpu", 'build', '-j2')
           {{ m.upload_artifacts(tag='gpu', filenames=tvm_multilib, folders=microtvm_template_projects) }}
@@ -80,6 +81,7 @@ stage('Build') {
       node('CPU-SMALL') {
         ws({{ m.per_exec_ws('tvm/build-cpu') }}) {
           init_git()
+          docker_init(ci_cpu)
           sh (
             script: "${docker_run} ${ci_cpu} ./tests/scripts/task_config_build_cpu.sh build",
             label: 'Create CPU cmake config',
@@ -103,6 +105,7 @@ stage('Build') {
       node('CPU-SMALL') {
         ws({{ m.per_exec_ws('tvm/build-wasm') }}) {
           init_git()
+          docker_init(ci_wasm)
           sh (
             script: "${docker_run} ${ci_wasm} ./tests/scripts/task_config_build_wasm.sh build",
             label: 'Create WASM cmake config',
@@ -127,6 +130,7 @@ stage('Build') {
       node('CPU-SMALL') {
         ws({{ m.per_exec_ws('tvm/build-i386') }}) {
           init_git()
+          docker_init(ci_i386)
           sh (
             script: "${docker_run} ${ci_i386} ./tests/scripts/task_config_build_i386.sh build",
             label: 'Create i386 cmake config',
@@ -144,6 +148,7 @@ stage('Build') {
       node('ARM-SMALL') {
         ws({{ m.per_exec_ws('tvm/build-arm') }}) {
           init_git()
+          docker_init(ci_arm)
           sh (
             script: "${docker_run} ${ci_arm} ./tests/scripts/task_config_build_arm.sh build",
             label: 'Create ARM cmake config',
@@ -161,6 +166,7 @@ stage('Build') {
       node('CPU-SMALL') {
         ws({{ m.per_exec_ws('tvm/build-qemu') }}) {
           init_git()
+          docker_init(ci_qemu)
           sh (
             script: "${docker_run} ${ci_qemu} ./tests/scripts/task_config_build_qemu.sh build",
             label: 'Create QEMU cmake config',
@@ -178,6 +184,7 @@ stage('Build') {
       node('CPU-SMALL') {
         ws({{ m.per_exec_ws('tvm/build-hexagon') }}) {
           init_git()
+          docker_init(ci_hexagon)
           sh (
             script: "${docker_run} ${ci_hexagon} ./tests/scripts/task_config_build_hexagon.sh build",
             label: 'Create Hexagon cmake config',

@@ -8,6 +8,7 @@ def lint() {
         ws='tvm/lint',
         )
       %}
+        docker_init(ci_lint)
         sh (
           script: "${docker_run} ${ci_lint} ./tests/scripts/task_lint.sh",
           label: 'Run lint',

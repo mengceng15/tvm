@@ -45,18 +45,27 @@
 // 'python3 jenkins/generate.py'
 // Note: This timestamp is here to ensure that updates to the Jenkinsfile are
 // always rebased on main before merging:
-// Generated at 2022-05-24T12:25:02.041933
+// Generated at 2022-05-25T11:48:25.852378
 
 import org.jenkinsci.plugins.pipeline.modeldefinition.Utils
 // NOTE: these lines are scanned by docker/dev_common.sh. Please update the regex as needed. -->
-ci_lint = 'tlcpack/ci-lint:20220513-055910-fa834f67e'
-ci_gpu = 'tlcpack/ci-gpu:20220519-055908-ddfa1da69'
-ci_cpu = 'tlcpack/ci-cpu:20220519-055908-ddfa1da69'
-ci_wasm = 'tlcpack/ci-wasm:20220513-055910-fa834f67e'
-ci_i386 = 'tlcpack/ci-i386:20220513-055910-fa834f67e'
-ci_qemu = 'tlcpack/ci-qemu:20220517-094028-de21c8f2e'
-ci_arm = 'tlcpack/ci-arm:20220513-055910-fa834f67e'
-ci_hexagon = 'tlcpack/ci-hexagon:20220516-190055-672ce3365'
+def aws_account_id = ''
+node("CPU-SMALL") {
+aws_account_id = sh(
+    returnStdout: true,
+    script: 'aws sts get-caller-identity | grep Account | cut -f4 -d\\"',
+    label: 'Get AWS ID'
+  ).trim()
+}
+def AWS_DEFAULT_REGION = 'us-west-2'
+ci_lint = "${aws_account_id}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/ci_lint:areusch-2ffreeze-dependencies-4233ca6eb-49"
+ci_gpu = "${aws_account_id}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/ci_gpu:areusch-2ffreeze-dependencies-6799bd6f9-49"
+ci_cpu = "${aws_account_id}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/ci_cpu:areusch-2ffreeze-dependencies-98aa6dde6-49"
+ci_wasm = "${aws_account_id}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/ci_wasm:areusch-2ffreeze-dependencies-c12a78740-49"
+ci_i386 = "${aws_account_id}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/ci_i386:areusch-2ffreeze-dependencies-89e22c948-49"
+ci_qemu = "${aws_account_id}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/ci_qemu:areusch-2ffreeze-dependencies-e839c36c8-48"
+ci_arm = "${aws_account_id}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/ci_arm:areusch-2ffreeze-dependencies-b9d48a35f-49"
+ci_hexagon = "${aws_account_id}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/ci_hexagon:areusch-2ffreeze-dependencies-e7d44544e-49"
 // <--- End of regex-scanned config.
 
 // Parameters to allow overriding (in Jenkins UI), the images
@@ -93,6 +102,7 @@ if (currentBuild.getBuildCauses().toString().contains('BranchIndexingCause')) {
   currentBuild.result = 'ABORTED' // optional, gives a better hint to the user that it's been skipped, rather than the default which shows it's successful
   return
 }
+
 
 // Filenames for stashing between build and test steps
 s3_prefix = "tvm-jenkins-artifacts-prod/tvm/${env.BRANCH_NAME}/${env.BUILD_NUMBER}"
@@ -391,6 +401,59 @@ def build_docker_images() {
   // }
 }
 
+def ecr_pull(full_name) {
+  aws_account_id = sh(
+    returnStdout: true,
+    script: 'aws sts get-caller-identity | grep Account | cut -f4 -d\\"',
+    label: 'Get AWS ID'
+  ).trim()
+
+  try {
+    withEnv([
+      "AWS_ACCOUNT_ID=${aws_account_id}",
+      'AWS_DEFAULT_REGION=us-west-2',
+      "AWS_ECR_REPO=${aws_account_id}.dkr.ecr.us-west-2.amazonaws.com"]) {
+      sh(
+        script: '''
+          set -eux
+          aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ECR_REPO
+        ''',
+        label: 'Log in to ECR'
+      )
+      sh(
+        script: """
+          set -eux
+          docker pull ${full_name}
+        """,
+        label: 'Pull image from ECR'
+      )
+    }
+  } finally {
+    withEnv([
+      "AWS_ACCOUNT_ID=${aws_account_id}",
+      'AWS_DEFAULT_REGION=us-west-2',
+      "AWS_ECR_REPO=${aws_account_id}.dkr.ecr.us-west-2.amazonaws.com"]) {
+      sh(
+        script: 'docker logout $AWS_ECR_REPO',
+        label: 'Clean up login credentials'
+      )
+    }
+  }
+}
+
+def docker_init(image) {
+  if (image.contains("amazonaws.com")) {
+    // If this string is in the image name it's from ECR and needs to be pulled
+    // with the right credentials
+    ecr_pull(image)
+  } else {
+    sh(
+      script: "docker pull ${image}",
+      label: 'Pull docker image',
+    )
+  }
+}
+
 // Run make. First try to do an incremental make from a previous workspace in hope to
 // accelerate the compilation. If something is wrong, clean the workspace and then
 // build from scratch.
@@ -424,7 +487,8 @@ def lint() {
           withEnv([
             'TVM_NUM_SHARDS=2',
             'TVM_SHARD_INDEX=0'], {
-            sh (
+            docker_init(ci_lint)
+              sh (
                 script: "${docker_run} ${ci_lint} ./tests/scripts/task_lint.sh",
                 label: 'Run lint',
               )
@@ -441,7 +505,8 @@ def lint() {
           withEnv([
             'TVM_NUM_SHARDS=2',
             'TVM_SHARD_INDEX=1'], {
-            sh (
+            docker_init(ci_lint)
+              sh (
                 script: "${docker_run} ${ci_lint} ./tests/scripts/task_lint.sh",
                 label: 'Run lint',
               )
@@ -514,6 +579,7 @@ stage('Build') {
       node('CPU-SMALL') {
         ws("workspace/exec_${env.EXECUTOR_NUMBER}/tvm/build-gpu") {
           init_git()
+          docker_init(ci_gpu)
           sh "${docker_run} --no-gpu ${ci_gpu} ./tests/scripts/task_config_build_gpu.sh build"
           make("${ci_gpu} --no-gpu", 'build', '-j2')
           sh(
@@ -560,6 +626,7 @@ stage('Build') {
       node('CPU-SMALL') {
         ws("workspace/exec_${env.EXECUTOR_NUMBER}/tvm/build-cpu") {
           init_git()
+          docker_init(ci_cpu)
           sh (
             script: "${docker_run} ${ci_cpu} ./tests/scripts/task_config_build_cpu.sh build",
             label: 'Create CPU cmake config',
@@ -599,6 +666,7 @@ stage('Build') {
       node('CPU-SMALL') {
         ws("workspace/exec_${env.EXECUTOR_NUMBER}/tvm/build-wasm") {
           init_git()
+          docker_init(ci_wasm)
           sh (
             script: "${docker_run} ${ci_wasm} ./tests/scripts/task_config_build_wasm.sh build",
             label: 'Create WASM cmake config',
@@ -623,6 +691,7 @@ stage('Build') {
       node('CPU-SMALL') {
         ws("workspace/exec_${env.EXECUTOR_NUMBER}/tvm/build-i386") {
           init_git()
+          docker_init(ci_i386)
           sh (
             script: "${docker_run} ${ci_i386} ./tests/scripts/task_config_build_i386.sh build",
             label: 'Create i386 cmake config',
@@ -656,6 +725,7 @@ stage('Build') {
       node('ARM-SMALL') {
         ws("workspace/exec_${env.EXECUTOR_NUMBER}/tvm/build-arm") {
           init_git()
+          docker_init(ci_arm)
           sh (
             script: "${docker_run} ${ci_arm} ./tests/scripts/task_config_build_arm.sh build",
             label: 'Create ARM cmake config',
@@ -687,6 +757,7 @@ stage('Build') {
       node('CPU-SMALL') {
         ws("workspace/exec_${env.EXECUTOR_NUMBER}/tvm/build-qemu") {
           init_git()
+          docker_init(ci_qemu)
           sh (
             script: "${docker_run} ${ci_qemu} ./tests/scripts/task_config_build_qemu.sh build",
             label: 'Create QEMU cmake config',
@@ -717,6 +788,7 @@ stage('Build') {
       node('CPU-SMALL') {
         ws("workspace/exec_${env.EXECUTOR_NUMBER}/tvm/build-hexagon") {
           init_git()
+          docker_init(ci_hexagon)
           sh (
             script: "${docker_run} ${ci_hexagon} ./tests/scripts/task_config_build_hexagon.sh build",
             label: 'Create Hexagon cmake config',
@@ -2645,6 +2717,7 @@ stage('Test') {
             try {
               init_git()
               withEnv(['PLATFORM=cpu'], {
+                docker_init(ci_cpu)
                 sh(
                         script: """
                           set -eux
@@ -2689,6 +2762,7 @@ stage('Test') {
             try {
               init_git()
               withEnv(['PLATFORM=qemu'], {
+                docker_init(ci_qemu)
                 sh(
                         script: """
                           set -eux
@@ -2733,6 +2807,7 @@ stage('Test') {
             try {
               init_git()
               withEnv(['PLATFORM=cpu'], {
+                docker_init(ci_cpu)
                 sh(
                         script: """
                           set -eux
@@ -2769,6 +2844,7 @@ stage('Test') {
       node('GPU') {
         ws("workspace/exec_${env.EXECUTOR_NUMBER}/tvm/docs-python-gpu") {
           init_git()
+          docker_init(ci_gpu)
           sh(
             script: """
               set -eux
@@ -2874,6 +2950,7 @@ def deploy() {
     if (env.BRANCH_NAME == 'main' && env.DOCS_DEPLOY_ENABLED == 'yes') {
       node('CPU') {
         ws("workspace/exec_${env.EXECUTOR_NUMBER}/tvm/deploy-docs") {
+          docker_init(ci_gpu)
           sh(
             script: """
               set -eux
@@ -2895,9 +2972,9 @@ cancel_previous_build()
 
 prepare()
 
-if (rebuild_docker_images) {
-  build_docker_images()
-}
+// if (rebuild_docker_images) {
+//  build_docker_images()
+// }
 
 lint()
 
