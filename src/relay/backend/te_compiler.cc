@@ -325,6 +325,7 @@ class TECompilerImpl : public TECompilerNode {
       VLOG(1) << "Lowering PrimFunc";
       IRModule lowered = tvm::LowerPrimFunc(value->cached_func->prim_func.value(),
                                             value->cached_func->prim_fn_var->name_hint, false);
+      std::cout << lowered << std::endl;
       ICHECK_EQ(lowered->functions.size(), 1);
       for (const auto& kv : lowered->functions) {
         value->cached_func->funcs->Add(value->cached_func->prim_fn_var, kv.second);
@@ -363,6 +364,7 @@ class TECompilerImpl : public TECompilerNode {
         }
         value->cached_func->funcs->Add(global_var, func);
       }
+      std::cout << scheduled_module << std::endl;
       ICHECK(value->cached_func->funcs->Lookup(value->cached_func->prim_fn_var)
                  .as<tir::PrimFuncNode>());
     }

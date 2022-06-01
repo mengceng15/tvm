@@ -303,7 +303,7 @@ def dense_vnni_compute(cfg, X, packed_w, bias=None):
         C = te.compute(C.shape, lambda i, j: C[i, j] + bias[j], tag=tag.BROADCAST)
 
     a_y, _ = C.op.axis
-    cfg.define_split("tile_y", a_y, num_outputs=2)
+    cfg.define_split("tile_y", a_y, num_outputs=3)
 
     return C
 
@@ -312,37 +312,58 @@ def dense_vnni_schedule(cfg, s, C, O, do_parallel=True):
     """Schedule dense compute using VNNI vpdpbusd instruction"""
     # C: The output of GEMM
     # O: The output of the fused op
+    CC = s.cache_write(C, "global")
+
     def split_y(out):
-        default_y_split_factor = 32
+        default_y_split_factor1 = 32
+        default_y_split_factor2 = 1
         a_y = out.op.axis[-2]
 
         if cfg.is_fallback:
-            return s[out].split(a_y, factor=default_y_split_factor)
+            a_yo, a_yi = s[out].split(a_y, factor=default_y_split_factor1)
+            a_yo2, a_yo1 = s[out].split(a_yo, factor=default_y_split_factor2)
+            return [a_yo2, a_yo1, a_yi]
 
         return cfg["tile_y"].apply(s, out, a_y)
 
-    (a_k,) = C.op.reduce_axis
+    def split_x(out):
+        default_x_split_factor1 = 16
+        default_x_split_factor2 = 1
+        a_x = out.op.axis[-1]
 
-    a_yo, a_yi = split_y(C)
-    a_xo, a_xi = s[C].split(C.op.axis[-1], factor=16)
-    a_ko, a_ki = s[C].split(a_k, factor=4)
+        if cfg.is_fallback:
+            a_xo, a_xi = s[out].split(a_x, factor=default_x_split_factor1)
+            a_xo2, a_xo1 = s[out].split(a_xo, factor=default_x_split_factor2)
+            return [a_xo2, a_xo1, a_xi]
+        else:
+            cfg.define_split("tile_x", a_x, num_outputs=3, filter=lambda x: x.size[-1] == 16)
+            return cfg["tile_y"].apply(s, out, a_x)
 
-    s[C].reorder(a_yo, a_xo, a_yi, a_ko, a_xi, a_ki)
+    a_yo2, a_yo1, a_yi = split_y(C)
+    a_xo2, a_xo1, a_xi = split_x(C)
+    s[C].reorder(a_yo2, a_xo2, a_yo1, a_xo1, a_yi, a_xi)
+
+    s[CC].compute_at(s[C], a_xo1)
+    yc, xc = s[CC].op.axis
+    (a_k,) = s[CC].op.reduce_axis
+    a_ko, a_ki = s[CC].split(a_k, factor=4)
+
+    s[CC].reorder(yc, a_ko, xc, a_ki)
 
     pc = dot_16x1x16_uint8_int8_int32_cascadelake()
-    s[C].tensorize(a_xi, pc)
+    s[CC].tensorize(xc, pc)
 
     if C == O:
-        fused = s[O].fuse(a_yo, a_xo)
+        fused = s[O].fuse(a_yo2, a_xo2, a_yo1, a_xo1)
     else:
-        a_yo, a_yi = split_y(O)
-        a_xo, a_xi = s[O].split(O.op.axis[-1], factor=16)
+        a_yo2, a_yo1, a_yi = split_y(O)
+        a_xo2, a_xo1, a_xi = split_x(O)
 
-        s[O].reorder(a_yo, a_xo, a_yi, a_xi)
+        s[O].reorder(a_yo2, a_xo2, a_yo1, a_xo1, a_yi, a_xi)
         s[O].vectorize(a_xi)
         s[C].compute_at(s[O], a_yi)
 
-        fused = s[O].fuse(a_yo, a_xo)
+        fused = s[O].fuse(a_yo2, a_xo2, a_yo1, a_xo1)
 
     if do_parallel:
         s[O].parallel(fused)
