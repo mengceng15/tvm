@@ -51,7 +51,7 @@ def batch_matmul_vnni_compute(cfg, x, y, *_):
     )
 
     _, a_y, _ = z.op.axis
-    cfg.define_split("tile_y", a_y, num_outputs=2)
+    cfg.define_split("tile_y", a_y, num_outputs=3)
     cfg.define_knob("layout_trans_compute_root", [0, 1])
 
     return z

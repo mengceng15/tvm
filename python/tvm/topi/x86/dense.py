@@ -337,14 +337,21 @@ def dense_vnni_schedule(cfg, s, C, O, do_parallel=True):
             return [a_xo2, a_xo1, a_xi]
         else:
             cfg.define_split("tile_x", a_x, num_outputs=3, filter=lambda x: x.size[-1] == 16)
-            return cfg["tile_y"].apply(s, out, a_x)
+            return cfg["tile_x"].apply(s, out, a_x)
 
     a_yo2, a_yo1, a_yi = split_y(C)
     a_xo2, a_xo1, a_xi = split_x(C)
-    s[C].reorder(a_yo2, a_xo2, a_yo1, a_xo1, a_yi, a_xi)
+    if len(s[C].op.axis) == 3:
+        a_bs = s[C].op.axis[-3]
+        s[C].reorder(a_bs, a_yo2, a_xo2, a_yo1, a_xo1, a_yi, a_xi)
+    else:
+        s[C].reorder(a_yo2, a_xo2, a_yo1, a_xo1, a_yi, a_xi)
 
     s[CC].compute_at(s[C], a_xo1)
-    yc, xc = s[CC].op.axis
+    if len(s[C].op.axis) == 3:
+        _, yc, xc = s[CC].op.axis
+    else:
+        yc, xc = s[CC].op.axis
     (a_k,) = s[CC].op.reduce_axis
     a_ko, a_ki = s[CC].split(a_k, factor=4)
 
@@ -356,10 +363,15 @@ def dense_vnni_schedule(cfg, s, C, O, do_parallel=True):
     if C == O:
         fused = s[O].fuse(a_yo2, a_xo2, a_yo1, a_xo1)
     else:
+        print(s[O].op.axis)
         a_yo2, a_yo1, a_yi = split_y(O)
         a_xo2, a_xo1, a_xi = split_x(O)
 
-        s[O].reorder(a_yo2, a_xo2, a_yo1, a_xo1, a_yi, a_xi)
+        if len(s[O].op.axis) == 3:
+            a_bs = s[O].op.axis[-3]
+            s[O].reorder(a_bs, a_yo2, a_xo2, a_yo1, a_xo1, a_yi, a_xi)
+        else:  
+            s[O].reorder(a_yo2, a_xo2, a_yo1, a_xo1, a_yi, a_xi)
         s[O].vectorize(a_xi)
         s[C].compute_at(s[O], a_yi)
 
