@@ -8,7 +8,7 @@ import numpy as np
 
 import tvm
 from tvm.relay.op.contrib.dnnl import *
-from tvm import relay
+from tvm import relay, topi
 import tvm.contrib.graph_executor as runtime
 from tvm.relay.testing import *
 from tvm.contrib import utils
@@ -105,10 +105,20 @@ logging.getLogger("autotvm").setLevel(logging.DEBUG)
 logging.getLogger("autotvm").addHandler(logging.StreamHandler(sys.stdout))
 
 # tune
-# measure_option = autotvm.measure_option(builder=autotvm.LocalBuilder(timeout=10),
-# 	runner=autotvm.LocalRunner(number=10, repeat=1, min_repeat_ms=1000))
+measure_option = autotvm.measure_option(builder=autotvm.LocalBuilder(timeout=10),
+	runner=autotvm.LocalRunner(number=10, repeat=1, min_repeat_ms=1000))
 
-# tasks = tvm.autotvm.task.extract_from_program(mod_bert_int8['main'], target="llvm -mcpu=cascadelake", params=params_bert_fp32)
+target = "llvm -mcpu=cascadelake"
+target_host = "llvm -mcpu=cascadelake"
+with tvm.target.Target(target, host=target_host):
+    with TempOpAttr(
+        "nn.dense", "FTVMAlterOpLayout", topi.x86.dense_alter_op._alter_dense_layout
+    ):
+        res_func = run_opt_pass(mod_bert_int8['main'], transform.AlterOpLayout())
+        res_func = run_opt_pass(res_func, transform.FoldConstant())
+
+tasks = tvm.autotvm.task.extract_from_program(res_func, target="llvm -mcpu=cascadelake", params=params_bert_fp32)
+print(tasks)
 
 # for i, task in enumerate(reversed(tasks)):
 #     prefix = "[Task %2d/%2d %s] " % (i + 1, len(tasks), task.name)
@@ -150,18 +160,18 @@ logging.getLogger("autotvm").addHandler(logging.StreamHandler(sys.stdout))
 # print(module.benchmark(dev, number=100, repeat=3))
 
 # profile
-dev = tvm.cpu()
-target = "llvm -mcpu=cascadelake"
-with autotvm.apply_history_best(log_file):
-    print("Compile...")
-    with tvm.transform.PassContext(opt_level=3):
-        lib = relay.build(mod_bert_int8, target=target, params=params_bert_fp32)
+# dev = tvm.cpu()
+# target = "llvm -mcpu=cascadelake"
+# with autotvm.apply_history_best(log_file):
+#     print("Compile...")
+#     with tvm.transform.PassContext(opt_level=3):
+#         lib = relay.build(mod_bert_int8, target=target, params=params_bert_fp32)
 
-from tvm.contrib.debugger.debug_executor import GraphModuleDebug
-m = GraphModuleDebug(
-    lib["debug_create"]("default", dev),
-    [dev],
-    lib.graph_json,
-    dump_root="./profile_int8_bert_base_latency",
-)
+# from tvm.contrib.debugger.debug_executor import GraphModuleDebug
+# m = GraphModuleDebug(
+#     lib["debug_create"]("default", dev),
+#     [dev],
+#     lib.graph_json,
+#     dump_root="./profile_int8_bert_base_latency",
+# )
 
