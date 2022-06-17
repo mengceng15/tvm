@@ -358,7 +358,8 @@ def dense_vnni_schedule(cfg, s, C, O, do_parallel=True):
     s[C].reorder(a_yo2, a_xo2, a_yo1, a_xo1, a_yi, a_xi)
 
     s[CC].compute_at(s[C], a_xo1)
-    yc, xc = s[CC].op.axis
+    yc = s[CC].op.axis[-2]
+    xc = s[CC].op.axis[-1]
 
     (a_k,) = CC.op.reduce_axis
     a_ko2, a_ko1, a_ki = split_k(CC, a_k)
