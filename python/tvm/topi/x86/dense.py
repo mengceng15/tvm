@@ -311,6 +311,7 @@ def dense_vnni_schedule(cfg, s, C, O, do_parallel=True):
     """Schedule dense compute using VNNI vpdpbusd instruction"""
     # C: The output of GEMM
     # O: The output of the fused op
+    CC = s.cache_write(C, "global")
     A, B = C.op.input_tensors
 
     def split_y(out):
@@ -353,15 +354,21 @@ def dense_vnni_schedule(cfg, s, C, O, do_parallel=True):
             filter=lambda x: x.size[-1] == 4)
         return cfg["tile_k"].apply(s, out, rd_axis)
 
-    a_k = s[C].op.reduce_axis[0]
     a_yo2, a_yo1, a_yi = split_y(C)
     a_xo2, a_xo1, a_xi = split_x(C)
-    a_ko2, a_ko1, a_ki = split_k(C, a_k)
-    s[C].reorder(a_yo2, a_xo2, a_yo1, a_xo1, a_ko2, a_ko1, a_yi, a_xi, a_ki)
-    # brgemm kernel starts from a_ko1
+    s[C].reorder(a_yo2, a_xo2, a_yo1, a_xo1, a_yi, a_xi)
+
+    s[CC].compute_at(s[C], a_xo1)
+    yc = s[CC].op.axis[-2]
+    xc = s[CC].op.axis[-1]
+
+    (a_k,) = CC.op.reduce_axis
+    a_ko2, a_ko1, a_ki = split_k(CC, a_k)
+
+    s[CC].reorder(a_ko2, a_ko1, yc, xc, a_ki)
 
     pc = dot_16x1x16_uint8_int8_int32_cascadelake()
-    s[C].tensorize(a_xi, pc)
+    s[CC].tensorize(xc, pc)
 
     if C == O:
         fused = s[O].fuse(a_yo2, a_xo2)
