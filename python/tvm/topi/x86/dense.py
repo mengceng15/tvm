@@ -311,12 +311,12 @@ def dense_vnni_schedule(cfg, s, C, O, do_parallel=True):
     """Schedule dense compute using VNNI vpdpbusd instruction"""
     # C: The output of GEMM
     # O: The output of the fused op
-    CC = s.cache_write(C, "global")
+    A, B = C.op.input_tensors
 
     def split_y(out):
         default_y_split_factor1 = 32
         default_y_split_factor2 = 1
-        a_y = out.op.axis[-2]
+        a_y = s[out].op.axis[-2]
 
         if cfg.is_fallback:
             a_yo, a_yi = s[out].split(a_y, factor=default_y_split_factor1)
@@ -329,7 +329,7 @@ def dense_vnni_schedule(cfg, s, C, O, do_parallel=True):
     def split_x(out):
         default_x_split_factor1 = 16
         default_x_split_factor2 = 1
-        a_x = out.op.axis[-1]
+        a_x = s[out].op.axis[-1]
 
         if cfg.is_fallback:
             a_xo, a_xi = s[out].split(a_x, factor=default_x_split_factor1)
@@ -353,21 +353,15 @@ def dense_vnni_schedule(cfg, s, C, O, do_parallel=True):
             filter=lambda x: x.size[-1] == 4)
         return cfg["tile_k"].apply(s, out, rd_axis)
 
+    a_k = s[C].op.reduce_axis[0]
     a_yo2, a_yo1, a_yi = split_y(C)
     a_xo2, a_xo1, a_xi = split_x(C)
-    s[C].reorder(a_yo2, a_xo2, a_yo1, a_xo1, a_yi, a_xi)
-
-    s[CC].compute_at(s[C], a_xo1)
-    yc = s[CC].op.axis[-2]
-    xc = s[CC].op.axis[-1]
-
-    (a_k,) = CC.op.reduce_axis
-    a_ko2, a_ko1, a_ki = split_k(CC, a_k)
-
-    s[CC].reorder(a_ko2, yc, a_ko1, xc, a_ki)
+    a_ko2, a_ko1, a_ki = split_k(C, a_k)
+    s[C].reorder(a_yo2, a_xo2, a_yo1, a_xo1, a_ko2, a_ko1, a_yi, a_xi, a_ki)
+    # brgemm kernel starts from a_ko1
 
     pc = dot_16x1x16_uint8_int8_int32_cascadelake()
-    s[CC].tensorize(xc, pc)
+    s[C].tensorize(a_xi, pc)
 
     if C == O:
         fused = s[O].fuse(a_yo2, a_xo2)
@@ -383,6 +377,8 @@ def dense_vnni_schedule(cfg, s, C, O, do_parallel=True):
 
     if do_parallel:
         s[O].parallel(fused)
+
+    print(tvm.lower(s, [A, B, O], simple_mode=True))
 
     return s, fused
 
