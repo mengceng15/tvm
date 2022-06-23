@@ -316,59 +316,66 @@ def dense_vnni_schedule(cfg, s, C, O, do_parallel=True):
 
     def split_y(out):
         default_y_split_factor1 = 32
-        default_y_split_factor2 = 1
+        default_y_split_factor2 = 2
+        default_y_split_factor3 = 1
         a_y = s[out].op.axis[-2]
 
         if cfg.is_fallback:
             a_yo, a_yi = s[out].split(a_y, factor=default_y_split_factor1)
             a_yo2, a_yo1 = s[out].split(a_yo, factor=default_y_split_factor2)
-            return [a_yo2, a_yo1, a_yi]
+            a_yo3, a_yo2 = s[out].split(a_yo2, factor=default_y_split_factor3)
+            return [a_yo3, a_yo2, a_yo1, a_yi]
 
-        cfg.define_split("tile_y", a_y, num_outputs=3)
+        cfg.define_split("tile_y", a_y, num_outputs=4)
         return cfg["tile_y"].apply(s, out, a_y)
 
     def split_x(out):
         default_x_split_factor1 = 16
-        default_x_split_factor2 = 1
+        default_x_split_factor2 = 2
+        default_x_split_factor3 = 1
         a_x = s[out].op.axis[-1]
 
         if cfg.is_fallback:
             a_xo, a_xi = s[out].split(a_x, factor=default_x_split_factor1)
             a_xo2, a_xo1 = s[out].split(a_xo, factor=default_x_split_factor2)
-            return [a_xo2, a_xo1, a_xi]
+            a_xo3, a_xo2 = s[out].split(a_xo2, factor=default_x_split_factor3)
+            return [a_xo3, a_xo2, a_xo1, a_xi]
 
-        cfg.define_split("tile_x", a_x, num_outputs=3,
+        cfg.define_split("tile_x", a_x, num_outputs=4,
             filter=lambda x: x.size[-1] == 16)
         return cfg["tile_x"].apply(s, out, a_x)
 
     def split_k(out, rd_axis):
         default_k_split_factor1 = 4
-        default_k_split_factor2 = 1
+        default_k_split_factor2 = 2
+        default_k_split_factor3 = 1
 
         if cfg.is_fallback:
             a_ko, a_ki = s[out].split(rd_axis, factor=default_k_split_factor1)
             a_ko2, a_ko1 = s[out].split(a_ko, factor=default_k_split_factor2)
-            return [a_ko2, a_ko1, a_ki]
+            a_ko3, a_ko2 = s[out].split(a_ko2, factor=default_k_split_factor3)
+            return [a_ko3, a_ko2, a_ko1, a_ki]
 
-        cfg.define_split("tile_k", rd_axis, num_outputs=3,
+        cfg.define_split("tile_k", rd_axis, num_outputs=4,
             filter=lambda x: x.size[-1] == 4)
         return cfg["tile_k"].apply(s, out, rd_axis)
 
-    a_yo2, a_yo1, a_yi = split_y(C)
-    a_xo2, a_xo1, a_xi = split_x(C)
-    s[C].reorder(a_yo2, a_xo2, a_yo1, a_xo1, a_yi, a_xi)
+    a_yo2, a_yo1, a_yi2, a_yi1 = split_y(C)
+    a_xo2, a_xo1, a_xi2, a_xi1 = split_x(C)
+    s[C].reorder(a_yo2, a_xo2, a_yo1, a_xo1, a_yi2, a_xi2, a_yi1, a_xi1)
 
     s[CC].compute_at(s[C], a_xo1)
-    yc = s[CC].op.axis[-2]
-    xc = s[CC].op.axis[-1]
 
-    (a_k,) = CC.op.reduce_axis
-    a_ko2, a_ko1, a_ki = split_k(CC, a_k)
+    cc_yo2, cc_yo1, cc_yi2, cc_yi1 = split_y(CC)
+    cc_xo2, cc_xo1, cc_xi2, cc_xi1 = split_x(CC)
+    (cc_k,) = CC.op.reduce_axis
+    cc_ko2, cc_ko1, cc_ki2, cc_ki1 = split_k(CC, cc_k)
 
-    s[CC].reorder(a_ko2, a_ko1, yc, xc, a_ki)
+    s[CC].reorder(cc_yo2, cc_xo2, cc_ko2, cc_yo1, cc_xo1, cc_ko1, cc_yi2, cc_xi2, cc_ki2, cc_yi1, cc_xi1, cc_ki1)
 
     pc = dot_16x1x16_uint8_int8_int32_cascadelake()
-    s[CC].tensorize(xc, pc)
+    s[CC].tensorize(cc_xi1, pc)
+    s[C].vectorize(a_xi1)
 
     if C == O:
         fused = s[O].fuse(a_yo2, a_xo2)
@@ -385,7 +392,7 @@ def dense_vnni_schedule(cfg, s, C, O, do_parallel=True):
     if do_parallel:
         s[O].parallel(fused)
 
-    print(tvm.lower(s, [A, B, O], simple_mode=True))
+    # print(tvm.lower(s, [A, B, O], simple_mode=True))
 
     return s, fused
 
