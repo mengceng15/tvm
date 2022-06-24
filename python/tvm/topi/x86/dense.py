@@ -317,64 +317,81 @@ def dense_vnni_schedule(cfg, s, C, O, do_parallel=True):
     def split_y(out):
         default_y_split_factor1 = 32
         default_y_split_factor2 = 2
-        default_y_split_factor3 = 1
+        default_y_split_factor3 = 2
+        default_y_split_factor4 = 2
         a_y = s[out].op.axis[-2]
 
         if cfg.is_fallback:
             a_yo, a_yi = s[out].split(a_y, factor=default_y_split_factor1)
             a_yo2, a_yo1 = s[out].split(a_yo, factor=default_y_split_factor2)
             a_yo3, a_yo2 = s[out].split(a_yo2, factor=default_y_split_factor3)
-            return [a_yo3, a_yo2, a_yo1, a_yi]
+            a_yo4, a_yo3 = s[out].split(a_yo3, factor=default_y_split_factor4)
+            return [a_yo4, a_yo3, a_yo2, a_yo1, a_yi]
 
-        cfg.define_split("tile_y", a_y, num_outputs=4)
+        cfg.define_split("tile_y", a_y, num_outputs=5)
         return cfg["tile_y"].apply(s, out, a_y)
 
     def split_x(out):
         default_x_split_factor1 = 16
         default_x_split_factor2 = 2
-        default_x_split_factor3 = 1
+        default_x_split_factor3 = 2
+        default_x_split_factor4 = 2
         a_x = s[out].op.axis[-1]
 
         if cfg.is_fallback:
             a_xo, a_xi = s[out].split(a_x, factor=default_x_split_factor1)
             a_xo2, a_xo1 = s[out].split(a_xo, factor=default_x_split_factor2)
             a_xo3, a_xo2 = s[out].split(a_xo2, factor=default_x_split_factor3)
-            return [a_xo3, a_xo2, a_xo1, a_xi]
+            a_xo4, a_xo3 = s[out].split(a_xo3, factor=default_x_split_factor4)
+            return [a_xo4, a_xo3, a_xo2, a_xo1, a_xi]
 
-        cfg.define_split("tile_x", a_x, num_outputs=4,
+        cfg.define_split("tile_x", a_x, num_outputs=5,
             filter=lambda x: x.size[-1] == 16)
         return cfg["tile_x"].apply(s, out, a_x)
 
     def split_k(out, rd_axis):
         default_k_split_factor1 = 4
         default_k_split_factor2 = 2
-        default_k_split_factor3 = 1
+        default_k_split_factor3 = 2
+        default_k_split_factor4 = 2
 
         if cfg.is_fallback:
             a_ko, a_ki = s[out].split(rd_axis, factor=default_k_split_factor1)
             a_ko2, a_ko1 = s[out].split(a_ko, factor=default_k_split_factor2)
             a_ko3, a_ko2 = s[out].split(a_ko2, factor=default_k_split_factor3)
-            return [a_ko3, a_ko2, a_ko1, a_ki]
+            a_ko4, a_ko3 = s[out].split(a_ko3, factor=default_k_split_factor4)
+            return [a_ko4, a_ko3, a_ko2, a_ko1, a_ki]
 
-        cfg.define_split("tile_k", rd_axis, num_outputs=4,
+        cfg.define_split("tile_k", rd_axis, num_outputs=5,
             filter=lambda x: x.size[-1] == 4)
         return cfg["tile_k"].apply(s, out, rd_axis)
 
-    a_yo2, a_yo1, a_yi2, a_yi1 = split_y(C)
-    a_xo2, a_xo1, a_xi2, a_xi1 = split_x(C)
-    s[C].reorder(a_yo2, a_xo2, a_yo1, a_xo1, a_yi2, a_xi2, a_yi1, a_xi1)
+    a_yo2, a_yo1, a_yi2, a_yi1, a_yi0 = split_y(C)
+    a_xo2, a_xo1, a_xi2, a_xi1, a_xi0 = split_x(C)
+    s[C].reorder(a_yo2, a_xo2,
+        a_yo1, a_xo1,
+        a_yi2, a_xi2,
+        a_yi1, a_xi1,
+        a_yi0, a_xi0)
 
     s[CC].compute_at(s[C], a_xo1)
 
-    cc_yo2, cc_yo1, cc_yi2, cc_yi1 = split_y(CC)
-    cc_xo2, cc_xo1, cc_xi2, cc_xi1 = split_x(CC)
+    cc_yo2, cc_yo1, cc_yi2, cc_yi1, cc_yi0 = split_y(CC)
+    cc_xo2, cc_xo1, cc_xi2, cc_xi1, cc_xi0 = split_x(CC)
     (cc_k,) = CC.op.reduce_axis
-    cc_ko2, cc_ko1, cc_ki2, cc_ki1 = split_k(CC, cc_k)
+    cc_ko2, cc_ko1, cc_ki2, cc_ki1, cc_ki0 = split_k(CC, cc_k)
 
-    s[CC].reorder(cc_yo2, cc_xo2, cc_ko2, cc_yo1, cc_xo1, cc_ko1, cc_yi2, cc_xi2, cc_ki2, cc_yi1, cc_xi1, cc_ki1)
+    s[CC].reorder(cc_yo2, cc_xo2, cc_ko2,
+        cc_yo1, cc_xo1, cc_ko1,
+        cc_yi2, cc_xi2, cc_ki2,
+        cc_yi1, cc_xi1, cc_ki1,
+        cc_yi0, cc_xi0, cc_ki0)
 
     pc = dot_16x1x16_uint8_int8_int32_cascadelake()
-    s[CC].tensorize(cc_xi1, pc)
+    s[CC].tensorize(cc_xi0, pc)
+    s[CC].unroll(cc_yi1)
+    s[CC].unroll(cc_xi1)
+    s[CC].unroll(cc_ki1)
     s[C].vectorize(a_xi1)
 
     if C == O:
