@@ -328,7 +328,8 @@ def dense_vnni_schedule(cfg, s, C, O, do_parallel=True):
             a_yo4, a_yo3 = s[out].split(a_yo3, factor=default_y_split_factor4)
             return [a_yo4, a_yo3, a_yo2, a_yo1, a_yi]
 
-        cfg.define_split("tile_y", a_y, num_outputs=5)
+        cfg.define_split("tile_y", a_y, num_outputs=5,
+            filter=lambda x: x.size[-1] == 1)
         return cfg["tile_y"].apply(s, out, a_y)
 
     def split_x(out):
