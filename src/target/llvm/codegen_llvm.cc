@@ -303,6 +303,7 @@ void CodeGenLLVM::Optimize() {
 #else
   builder.Inliner = llvm::createFunctionInliningPass(builder.OptLevel, 0);
 #endif
+  builder.DisableUnrollLoops = true;
   builder.LoopVectorize = true;
   builder.SLPVectorize = true;
   this->InitPassManagerBuilder(&builder);

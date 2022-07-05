@@ -1013,11 +1013,16 @@ class BufferBindUnwrapper : public StmtExprMutator {
   }
 
   Stmt VisitStmt_(const PrefetchNode* op) final {
+    std::cout << "Pre op bounds" << std::endl;
+    std::cout << op->bounds.size() << std::endl;
     Stmt stmt = StmtExprMutator::VisitStmt_(op);
     op = stmt.as<PrefetchNode>();
     ICHECK(op != nullptr);
 
     const BufferEntry& e = GetBufferEntry(op->buffer);
+    
+    std::cout << "Post op bounds" << std::endl;
+    std::cout << op->bounds.size() << std::endl;
 
     ICHECK(e.in_scope) << "Read a buffer that is already out of scope";
     ICHECK_EQ(e.buffer->shape.size(), op->bounds.size())
