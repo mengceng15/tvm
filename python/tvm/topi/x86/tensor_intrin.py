@@ -241,7 +241,7 @@ def dot_16x1x16_uint8_int8_int16():
     )
 
 
-def dot_16x1x16_uint8_int8_int32_cascadelake():
+def dot_16x1x16_uint8_int8_int32_cascadelake(B_inner_block2=16):
     """
     Int8 dot product by every 4 elements using AVX512VNNI Cascade Lake instructions.
     This function takes two arrays of uint8 and int8 datatype -- data[4] and
@@ -270,7 +270,8 @@ def dot_16x1x16_uint8_int8_int32_cascadelake():
         The Cascade Lake int8 TensorIntrin that can be used in tensorizing schedule
     """
 
-    int32_lanes = 16  # 16 int32 lanes in AVX512
+    lanes_factor = int(B_inner_block2 / 16)
+    int32_lanes = lanes_factor * 16  # 16 int32 lanes in AVX512
     num_int8_elements = 4  # 4 int8 elements in int32
     data = te.placeholder((num_int8_elements,), dtype="uint8", name="data")
     kernel = te.placeholder((int32_lanes, num_int8_elements), dtype="int8", name="kernel")
@@ -292,50 +293,54 @@ def dot_16x1x16_uint8_int8_int32_cascadelake():
         def _instr(index):
             ib = tvm.tir.ir_builder.create()
             if index == 1:
-                ib.emit(outs[0].vstore(0, tvm.tir.const(0, "int32x16")))
+                for i in range(lanes_factor):
+                    ib.emit(outs[0].vstore([i * 16], tvm.tir.const(0, "int32x16")))
                 return ib.get()
 
             a_int8 = ins[0].vload([0], "uint8x4")
             re_int32 = tvm.tir.call_intrin("int32", "tir.reinterpret", a_int8)
             vec_ai32 = re_int32.astype("int32x16")
-            vec_b = ins[1].vload([0, 0], "int8x64")
 
             vnni_inst_name = "llvm.x86.avx512.vpdpbusd.512"
             llvm_id = tvm.target.codegen.llvm_lookup_intrinsic_id(vnni_inst_name)
 
-            if llvm_id != 0:  # VNNI is available for current LLVM version
-                vec_bi32 = tvm.tir.call_intrin("int32x16", "tir.reinterpret", vec_b)
-                vec_zero = tvm.tir.const(0, "int32x16")
-                quad_reduction = tvm.tir.call_llvm_pure_intrin(
-                    "int32x16",
-                    "llvm.x86.avx512.vpdpbusd.512",
-                    tvm.tir.const(0, "uint32"),
-                    vec_zero,
-                    vec_ai32,
-                    vec_bi32,
-                )
-            else:  # Fall back to the normal AVX512
-                vec_a = tvm.tir.call_intrin("int8x64", "tir.reinterpret", vec_ai32)
-                vec_one = tvm.tir.const(1, "int16x32")
-                pair_reduction = tvm.tir.call_llvm_pure_intrin(
-                    "int16x32",
-                    "llvm.x86.avx512.pmaddubs.w.512",
-                    tvm.tir.const(0, "uint32"),
-                    vec_a,
-                    vec_b,
-                )
-                quad_reduction = tvm.tir.call_llvm_pure_intrin(
-                    "int32x16",
-                    "llvm.x86.avx512.pmaddw.d.512",
-                    tvm.tir.const(0, "uint32"),
-                    pair_reduction,
-                    vec_one,
-                )
+            for i in range(lanes_factor):
+                vec_c = outs[0].vload([i * 16], "int32x16")
+                vec_b = ins[1].vload([i * 16, 0], "int8x64")
 
-            if index == 0:
-                ib.emit(outs[0].vstore(0, quad_reduction))
-            else:
-                ib.emit(outs[0].vstore(0, quad_reduction + outs[0].vload([0], "int32x16")))
+                if llvm_id != 0:  # VNNI is available for current LLVM version
+                    vec_bi32 = tvm.tir.call_intrin("int32x16", "tir.reinterpret", vec_b)
+                    
+                    quad_reduction = tvm.tir.call_llvm_pure_intrin(
+                        "int32x16",
+                        "llvm.x86.avx512.vpdpbusd.512",
+                        tvm.tir.const(0, "uint32"),
+                        vec_c,
+                        vec_bi32,
+                        vec_ai32,
+                    )
+                else:  # Fall back to the normal AVX512
+                    vec_a = tvm.tir.call_intrin("int8x64", "tir.reinterpret", vec_ai32)
+                    vec_one = tvm.tir.const(1, "int16x32")
+                    pair_reduction = tvm.tir.call_llvm_pure_intrin(
+                        "int16x32",
+                        "llvm.x86.avx512.pmaddubs.w.512",
+                        tvm.tir.const(0, "uint32"),
+                        vec_a,
+                        vec_b,
+                    )
+                    quad_reduction = tvm.tir.call_llvm_pure_intrin(
+                        "int32x16",
+                        "llvm.x86.avx512.pmaddw.d.512",
+                        tvm.tir.const(0, "uint32"),
+                        pair_reduction,
+                        vec_one,
+                    )
+
+                if index == 0:
+                    ib.emit(outs[0].vstore([i * 16], quad_reduction))
+                else:
+                    ib.emit(outs[0].vstore([i * 16], quad_reduction))
             return ib.get()
 
         # body, reset, update

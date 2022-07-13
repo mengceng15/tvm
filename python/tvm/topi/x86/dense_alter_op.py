@@ -49,7 +49,12 @@ def _alter_dense_layout(attrs, inputs, tinfos, out_type):
     N, _ = get_const_tuple(weight_tensor.shape)
 
     if check_vnni_applicable(data_tensor, weight_tensor) and data_tensor.dtype == "uint8":
-        weight_layout = "NC16n4c"
+        if weight_tensor.shape[-2].value >= 64:
+            weight_layout = "NC64n4c"
+        elif weight_tensor.shape[-2].value >= 32:
+            weight_layout = "NC32n4c"
+        else:
+            weight_layout = "NC16n4c"
         return relay.nn.contrib_dense_pack(inputs[0], inputs[1], weight_layout, None, out_dtype)
 
     _, outs = relay.backend.te_compiler.select_implementation(
