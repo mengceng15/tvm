@@ -51,9 +51,41 @@ def test_vnni_int8_dense(M, K, N):
     tvm.testing.assert_allclose(module.get_output(0).numpy(), np_ans, atol=0, rtol=0)
 
 
+def test_vnni_int8_dense_with_bias(M, K, N):
+    dev = tvm.cpu()
+
+    x = relay.var('data', shape=(M, K), dtype="uint8")
+    w = relay.var('weight', shape=(N, K), dtype="int8")
+    b = relay.var('bias', shape=(M, N), dtype="int32")
+    out = relay.nn.dense(x, w, out_dtype="int32")
+    out = relay.add(out, b)
+    mod = tvm.IRModule.from_expr(out)
+    mod = relay.transform.InferType()(mod)
+
+    with tvm.transform.PassContext(opt_level=3):
+        lib = relay.build(mod, target="llvm -mcpu=cascadelake -model=platinum-8280")
+
+    a_np = np.random.randint(low=-128, high=127, size=(M, K)).astype("uint8")
+    b_np = np.random.randint(low=-128, high=127, size=(N, K)).astype("int8")
+    c_np = np.random.randint(low=-128, high=127, size=(M, N)).astype("int32")
+    a_tvm = tvm.nd.array(a_np, dev)
+    b_tvm = tvm.nd.array(b_np, dev)
+    c_tvm = tvm.nd.array(c_np, dev)
+
+    module = runtime.GraphModule(lib["default"](dev))
+    module.set_input('data', a_tvm)
+    module.set_input('weight', b_tvm)
+    module.set_input('bias', c_tvm)
+    module.run()
+    np_ans = np.matmul(a_np.astype("int32"), b_np.T.astype("int32")) + c_np
+
+    tvm.testing.assert_allclose(module.get_output(0).numpy(), np_ans, atol=0, rtol=0)
+
+
 if __name__ == "__main__":
     if avx512_vnni_enabled():
         test_vnni_int8_dense(128, 3072, 768)
         test_vnni_int8_dense(128, 768, 768)
         test_vnni_int8_dense(128, 768, 3072)
         test_vnni_int8_dense(1, 64, 128)
+        test_vnni_int8_dense_with_bias(128, 3072, 768)

@@ -383,14 +383,18 @@ def dense_vnni_schedule(cfg, s, C, O, do_parallel=True):
     if C == O:
         fused = s[O].fuse(a_y3, a_x3)
     else:
-        a_yo2, a_yo1, a_yi = split_y(O)
-        a_xo2, a_xo1, a_xi = split_x(O)
+        a_y3, a_y2, a_y1, a_yr = split_y(O)
+        a_x3, a_x2, a_x1, a_xr, a_xi = split_x(O)
 
-        s[O].reorder(a_yo2, a_xo2, a_yo1, a_xo1, a_yi, a_xi)
+        s[O].reorder(a_y3, a_x3,
+            a_y2, a_x2,
+            a_y1, a_x1,
+            a_yr, a_xr,
+            a_xi)
         s[O].vectorize(a_xi)
-        s[C].compute_at(s[O], a_yo1)
+        s[C].compute_at(s[O], a_y2)
 
-        fused = s[O].fuse(a_yo2, a_xo2)
+        fused = s[O].fuse(a_y3, a_x3)
 
     if do_parallel:
         s[O].parallel(fused)
