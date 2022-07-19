@@ -361,13 +361,9 @@ def dense_vnni_schedule(cfg, s, C, O, do_parallel=True):
             filter=lambda x: x.size[-1] == 4)
         return cfg["tile_k"].apply(s, out, rd_axis)
 
-    # print(cfg["tile_y"].size)
-    # print(cfg["tile_x"].size)
-    # print(cfg["tile_k"].size)
-
     (c_k,) = C.op.reduce_axis
     yo2, yo1, yi2, yi1 = split_y(C)
-    xo2, xo1, xi2, xi1, xi0 = split_x(C)    
+    xo2, xo1, xi2, xi1, xi0 = split_x(C)
     ko1, ki2, ki1, ki0 = split_k(C, c_k)
 
     s[C].reorder(
@@ -381,7 +377,7 @@ def dense_vnni_schedule(cfg, s, C, O, do_parallel=True):
     s[C].tensorize(xi0, pc)
     s[C].unroll(yi1)
     s[C].unroll(xi1)
-    # s[C].unroll(ki1)
+    s[C].unroll(ki1)
 
     if C == O:
         fused = s[O].fuse(yo2, xo2)
@@ -398,7 +394,7 @@ def dense_vnni_schedule(cfg, s, C, O, do_parallel=True):
     if do_parallel:
         s[O].parallel(fused)
 
-    print(tvm.lower(s, [A, B, O], simple_mode=True))
+    # print(tvm.lower(s, [A, B, O], simple_mode=True))
 
     return s, fused
 

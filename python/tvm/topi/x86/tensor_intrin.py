@@ -337,10 +337,7 @@ def dot_16x1x16_uint8_int8_int32_cascadelake(B_inner_block2=16):
                         vec_one,
                     )
 
-                if index == 0:
-                    ib.emit(outs[0].vstore([i * 16], quad_reduction))
-                else:
-                    ib.emit(outs[0].vstore([i * 16], quad_reduction))
+                ib.emit(outs[0].vstore([i * 16], quad_reduction))
             return ib.get()
 
         # body, reset, update
