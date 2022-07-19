@@ -306,7 +306,6 @@ def dot_16x1x16_uint8_int8_int32_cascadelake():
 
             if llvm_id != 0:  # VNNI is available for current LLVM version
                 vec_bi32 = tvm.tir.call_intrin("int32x16", "tir.reinterpret", vec_b)
-                # vec_zero = tvm.tir.const(0, "int32x16")
                 quad_reduction = tvm.tir.call_llvm_pure_intrin(
                     "int32x16",
                     "llvm.x86.avx512.vpdpbusd.512",
