@@ -299,18 +299,19 @@ def dot_16x1x16_uint8_int8_int32_cascadelake():
             re_int32 = tvm.tir.call_intrin("int32", "tir.reinterpret", a_int8)
             vec_ai32 = re_int32.astype("int32x16")
             vec_b = ins[1].vload([0, 0], "int8x64")
+            vec_c = outs[0].vload([0], "int32x16")
 
             vnni_inst_name = "llvm.x86.avx512.vpdpbusd.512"
             llvm_id = tvm.target.codegen.llvm_lookup_intrinsic_id(vnni_inst_name)
 
             if llvm_id != 0:  # VNNI is available for current LLVM version
                 vec_bi32 = tvm.tir.call_intrin("int32x16", "tir.reinterpret", vec_b)
-                vec_zero = tvm.tir.const(0, "int32x16")
+                # vec_zero = tvm.tir.const(0, "int32x16")
                 quad_reduction = tvm.tir.call_llvm_pure_intrin(
                     "int32x16",
                     "llvm.x86.avx512.vpdpbusd.512",
                     tvm.tir.const(0, "uint32"),
-                    vec_zero,
+                    vec_c,
                     vec_ai32,
                     vec_bi32,
                 )
@@ -332,10 +333,7 @@ def dot_16x1x16_uint8_int8_int32_cascadelake():
                     vec_one,
                 )
 
-            if index == 0:
-                ib.emit(outs[0].vstore(0, quad_reduction))
-            else:
-                ib.emit(outs[0].vstore(0, quad_reduction + outs[0].vload([0], "int32x16")))
+            ib.emit(outs[0].vstore(0, quad_reduction))
             return ib.get()
 
         # body, reset, update
