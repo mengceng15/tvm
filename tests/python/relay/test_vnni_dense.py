@@ -14,6 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+import sys
 import numpy as np
 import tvm
 import tvm.testing
@@ -22,7 +23,9 @@ from tvm import relay
 
 
 def avx512_vnni_enabled():
-    return "avx512_vnni" in open("/proc/cpuinfo", "r").read()
+    if sys.platform.startswith("linux"):
+        return "avx512_vnni" in open("/proc/cpuinfo", "r").read()
+    return False
 
 
 def test_vnni_int8_dense(M, K, N):
@@ -64,6 +67,9 @@ def test_vnni_int8_dense_with_bias(M, K, N):
 
     with tvm.transform.PassContext(opt_level=3):
         lib = relay.build(mod, target="llvm -mcpu=cascadelake -model=platinum-8280")
+
+    llvm_ir = lib.lib.get_source("asm")
+    assert "vpdpbusd" in llvm_ir, "VNNI is unused"
 
     a_np = np.random.randint(low=-128, high=127, size=(M, K)).astype("uint8")
     b_np = np.random.randint(low=-128, high=127, size=(N, K)).astype("int8")
