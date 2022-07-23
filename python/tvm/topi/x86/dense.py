@@ -301,9 +301,6 @@ def dense_vnni_compute(cfg, X, packed_w, bias=None):
 
     if bias is not None:
         C = te.compute(C.shape, lambda i, j: C[i, j] + bias[j], tag=tag.BROADCAST)
-
-    a_y, _ = C.op.axis
-
     return C
 
 
