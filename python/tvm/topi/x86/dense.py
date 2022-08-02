@@ -290,7 +290,7 @@ def dense_vnni_compute(cfg, X, packed_w, bias=None):
         (m, n_o * n_i),
         lambda i, j: te.sum(
             X[i, ak].astype("int32")
-            * packed_w[tvm.tir.indexdiv(j, 16), tvm.tir.indexdiv(ak, 4), j % 16, ak % 4].astype(
+            * packed_w[tvm.tir.indexdiv(j, 64), tvm.tir.indexdiv(ak, 4), j % 64, ak % 4].astype(
                 "int32"
             ),
             axis=ak,
@@ -407,7 +407,7 @@ def dense_vnni(cfg, data, weight, bias=None, out_dtype=None):
     assert len(weight.shape) == 4
     assert data.dtype == "uint8" and weight.dtype == "int8"
     _, _, n_inner, k_inner = get_const_tuple(weight.shape)  # out_dim
-    assert n_inner == 16 and k_inner == 4
+    assert n_inner == 64 and k_inner == 4
     return dense_vnni_compute(cfg, data, weight, bias)
 
 
