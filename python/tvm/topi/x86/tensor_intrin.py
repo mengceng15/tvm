@@ -296,9 +296,7 @@ def dot_16x1x16_uint8_int8_int32_cascadelake():
                     ib.emit(outs[0].vstore(i * 16, tvm.tir.const(0, "int32x16")))
                 return ib.get()
 
-            # b_handle = ib.buffer_ptr(b_buffer)
-            # args = [b_handle, 0, 3, 1]
-            # ib.emit(tvm.tir.Evaluate(tvm.tir.Call("int8", "tir.prefetch", args)))
+            b_handle = ib.buffer_ptr(b_buffer)
 
             a_int8 = ins[0].vload([0], "uint8x4")
             re_int32 = tvm.tir.call_intrin("int32", "tir.reinterpret", a_int8)
@@ -310,6 +308,10 @@ def dot_16x1x16_uint8_int8_int32_cascadelake():
                 for i in range(4):
                     vec_b = ins[1].vload([i * 16, 0], "int8x64")
                     vec_c = outs[0].vload([i * 16], "int32x16")
+
+                    if i <= 3:
+                        args = [tvm.tir.call_intrin("handle", "tir.address_of", b_handle[0] + i * 64), 0, 3, 1]
+                        ib.emit(tvm.tir.Evaluate(tvm.tir.Call("int8", "tir.prefetch", args)))
 
                     vec_bi32 = tvm.tir.call_intrin("int32x16", "tir.reinterpret", vec_b)
                     quad_reduction = tvm.tir.call_llvm_pure_intrin(

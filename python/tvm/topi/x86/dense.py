@@ -396,6 +396,8 @@ def dense_vnni_schedule(cfg, s, C, O, do_parallel=True):
     if do_parallel:
         s[O].parallel(fused)
 
+    print(tvm.lower(s, [A, B, O], simple_mode=True))
+
     return s, fused
 
 
