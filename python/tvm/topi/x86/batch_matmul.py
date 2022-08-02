@@ -32,7 +32,7 @@ from .injective import schedule_injective_from_existing
 def batch_matmul_vnni_compute(cfg, x, y, *_):
     """Compute for uint8 x int8 -> int32 batch_matmul"""
     batch, m, k = x.shape
-    packed_y_layout = "BNK16n4k"
+    packed_y_layout = "BNK64n4k"
     packed_y = layout_transform(y, "BNK", packed_y_layout)
     _, n_o, _, n_i, _ = packed_y.shape
     ak = te.reduce_axis((0, k), name="k")
@@ -41,7 +41,7 @@ def batch_matmul_vnni_compute(cfg, x, y, *_):
         (batch, m, n_o * n_i),
         lambda b, i, j: te.sum(
             x[b, i, ak].astype("int32")
-            * packed_y[b, tvm.tir.indexdiv(j, 16), tvm.tir.indexdiv(ak, 4), j % 16, ak % 4].astype(
+            * packed_y[b, tvm.tir.indexdiv(j, 64), tvm.tir.indexdiv(ak, 4), j % 64, ak % 4].astype(
                 "int32"
             ),
             axis=ak,
