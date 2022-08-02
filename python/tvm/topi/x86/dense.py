@@ -326,10 +326,10 @@ def dense_vnni_schedule(cfg, s, C, O, do_parallel=True):
         return cfg["tile_y"].apply(s, out, a_y)
 
     def split_x(out):
-        default_x_split_factor1 = 16
+        default_x_split_factor1 = 64
         default_x_split_factor2 = 2
-        default_x_split_factor3 = 2
-        default_x_split_factor4 = 2
+        default_x_split_factor3 = 1
+        default_x_split_factor4 = 1
         a_x = s[out].op.axis[-1]
 
         if cfg.is_fallback:
@@ -340,7 +340,7 @@ def dense_vnni_schedule(cfg, s, C, O, do_parallel=True):
             return [a_xo4, a_xo3, a_xo2, a_xo1, a_xi]
 
         cfg.define_split("tile_x", a_x, num_outputs=5,
-            filter=lambda x: x.size[-1] == 16)
+            filter=lambda x: x.size[-1] == 64)
         return cfg["tile_x"].apply(s, out, a_x)
 
     def split_k(out, rd_axis):

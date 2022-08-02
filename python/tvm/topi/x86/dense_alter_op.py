@@ -34,7 +34,7 @@ def check_vnni_applicable(x, y):
         target_has_vnni(mcpu)
         and "int8" in x.dtype
         and "int8" in y.dtype
-        and y.shape[-2] % 16 == 0
+        and y.shape[-2] % 64 == 0
         and y.shape[-1] % 4 == 0
     )
 
@@ -49,7 +49,7 @@ def _alter_dense_layout(attrs, inputs, tinfos, out_type):
     N, _ = get_const_tuple(weight_tensor.shape)
 
     if check_vnni_applicable(data_tensor, weight_tensor) and data_tensor.dtype == "uint8":
-        weight_layout = "NC16n4c"
+        weight_layout = "NC64n4c"
         return relay.nn.contrib_dense_pack(inputs[0], inputs[1], weight_layout, None, out_dtype)
 
     _, outs = relay.backend.te_compiler.select_implementation(
