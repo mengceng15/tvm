@@ -574,7 +574,7 @@ def batch_matmul_strategy_cpu(attrs, inputs, out_type, target):
         and target_has_vnni(mcpu)
         and inputs[0].dtype == "uint8"
         and inputs[1].dtype == "int8"
-        and inputs[1].shape[-2] % 16 == 0
+        and inputs[1].shape[-2] % 64 == 0
         and inputs[1].shape[-1] % 4 == 0
     ):
         strategy.add_implementation(
