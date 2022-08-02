@@ -309,8 +309,8 @@ def dot_16x1x16_uint8_int8_int32_cascadelake():
                     vec_b = ins[1].vload([i * 16, 0], "int8x64")
                     vec_c = outs[0].vload([i * 16], "int32x16")
 
-                    if i <= 3:
-                        args = [tvm.tir.call_intrin("handle", "tir.address_of", b_handle[0] + i * 64), 0, 3, 1]
+                    if i < 3:
+                        args = [tvm.tir.call_intrin("handle", "tir.address_of", b_handle[(i + 1) * 64]), 0, 3, 1]
                         ib.emit(tvm.tir.Evaluate(tvm.tir.Call("int8", "tir.prefetch", args)))
 
                     vec_bi32 = tvm.tir.call_intrin("int32x16", "tir.reinterpret", vec_b)
