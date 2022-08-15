@@ -35,9 +35,8 @@ from .tensor_intrin import dot_16x1x16_uint8_int8_int32_cascadelake
 def _schedule_dense_pack_template(cfg, s, C, O):
     A, packedB = s[C].op.input_tensors
 
-    CC = s.cache_write(C, "global")
     y, x = s[C].op.axis
-    (k,) = s[CC].op.reduce_axis
+    (k,) = s[C].op.reduce_axis
 
     yt, yo, yi = cfg["tile_y"].apply(s, C, y)
     xt, xo, xi = cfg["tile_x"].apply(s, C, x)
@@ -49,22 +48,8 @@ def _schedule_dense_pack_template(cfg, s, C, O):
     s[C].unroll(yi)
     s[C].vectorize(xi)
 
-    s[CC].compute_at(s[C], xyo)
-    y, x = s[CC].op.axis
-    ko, ki = cfg["tile_k"].apply(s, CC, k)
-    s[CC].reorder(ko, ki, y, x)
-    s[CC].vectorize(x)
-
-    tile_inner = cfg["tile_inner"].size[-1]
-    if tile_inner > 1:
-        yo, yi = s[CC].split(y, tile_inner)
-        s[CC].reorder(ko, yo, ki, yi, x)
-        s[CC].unroll(yo)
-        s[CC].unroll(ki)
-        s[CC].unroll(yi)
-    else:
-        s[CC].unroll(ki)
-        s[CC].unroll(y)
+    ko, ki = cfg["tile_k"].apply(s, C, k)
+    s[C].reorder(xyt, ko, xyo, ki, yi, xi)
 
     if C != O:
         y, x = s[O].op.axis
@@ -134,7 +119,6 @@ def _default_dense_pack_config(cfg, M, N, K):
     cfg["tile_y"] = SplitEntity([MM // tiley_oi, tiley_oi, tiley_ii])
     cfg["tile_x"] = SplitEntity([NN // tilex_oi, tilex_oi, tilex_ii])
     cfg["tile_k"] = SplitEntity([K, 1])
-    cfg["tile_inner"] = SplitEntity([M // tiley_ii, tiley_ii])
 
 
 def _default_dense_nopack_config(cfg, M, N, K):
@@ -228,12 +212,7 @@ def dense_pack(cfg, data, weight, bias=None, out_dtype=None):
     cfg.define_split(
         "tile_k", 32 if isinstance(K, (tvm.tir.Var, tvm.tir.Any)) else K, num_outputs=2
     )
-    cfg.define_split(
-        "tile_inner",
-        32 if isinstance(M, (tvm.tir.Var, tvm.tir.Any)) else M,
-        num_outputs=2,
-        filter=lambda y: y.size[-1] <= 16,
-    )
+    
     if cfg.is_fallback:
         _default_dense_pack_config(cfg, M, N, K)
 
