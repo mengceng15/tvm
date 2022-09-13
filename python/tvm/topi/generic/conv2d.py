@@ -177,31 +177,22 @@ def schedule_conv_NCHWc_cpu_common_int8(
 
     # schedule 5-D NCHW[x]c conv
     C, O = conv_out, last
-    CC = s.cache_write(C, "global")
 
     batch, oc_chunk, oh, ow, oc_block = s[C].op.axis
     ow_chunk, ow_block = s[C].split(ow, factor=reg_n)
-    s[C].reorder(oc_chunk, oh, ow_chunk, ow_block, oc_block)
-    parallel_axis = s[C].fuse(batch, oc_chunk, oh)
-    s[C].vectorize(oc_block)
-    if C == O:
-        s[C].parallel(parallel_axis)
 
-    s[CC].compute_at(s[C], parallel_axis)
-    _, oc_chunk, oh, ow, oc_block = s[CC].op.axis
-    kh, kw, ic_outer, ic_f_inner, ic_s_inner = s[CC].op.reduce_axis
-
-    ow_chunk, ow_block = s[CC].split(ow, factor=reg_n)
+    kh, kw, ic_outer, ic_f_inner, ic_s_inner = s[C].op.reduce_axis
 
     assert oc_bn % int32_lanes == 0, f"oc_bn={oc_bn} % int32_lanes={int32_lanes} != 0"
     assert (
         ic_bn % int8_elems == 0
     ), f"ic_bn={ic_bn} % int8_elems={int8_elems} != 0"  # (u)int8 elements in (u)int32
 
-    oc_f_inner, oc_s_inner = s[CC].split(oc_block, factor=int32_lanes)
+    oc_f_inner, oc_s_inner = s[C].split(oc_block, factor=int32_lanes)
 
     if unroll_kw:
-        s[CC].reorder(
+        s[C].reorder(
+            batch,
             oc_chunk,
             oh,
             ow_chunk,
@@ -214,9 +205,10 @@ def schedule_conv_NCHWc_cpu_common_int8(
             oc_s_inner,
             ic_s_inner,
         )
-        s[CC].unroll(kw)
+        s[C].unroll(kw)
     else:
-        s[CC].reorder(
+        s[C].reorder(
+            batch,
             oc_chunk,
             oh,
             ow_chunk,
@@ -231,9 +223,13 @@ def schedule_conv_NCHWc_cpu_common_int8(
         )
 
     if intrin is not None:
-        s[CC].tensorize(oc_s_inner, intrin)
-    s[CC].unroll(ow_block)
-    s[CC].unroll(oc_f_inner)
+        s[C].tensorize(oc_s_inner, intrin)
+    s[C].unroll(ow_block)
+    s[C].unroll(oc_f_inner)
+
+    parallel_axis = s[C].fuse(batch, oc_chunk, oh)
+    if C == O:
+        s[C].parallel(parallel_axis)
 
     if C != O:
         out_ndim = len(s[O].op.axis)
