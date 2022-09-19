@@ -228,6 +228,7 @@ def schedule_conv_NCHWc_cpu_common_int8(
 
     if intrin is not None:
         s[C].tensorize(oc_s_inner, intrin)
+    s[C].unroll(oh_block)
     s[C].unroll(ow_block)
     s[C].unroll(oc_f_inner)
 
