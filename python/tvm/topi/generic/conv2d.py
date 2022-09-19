@@ -140,6 +140,7 @@ def schedule_conv_NCHWc_cpu_common_int8(
     lower-numerical-precision-deep-learning-inference-and-training
     """
     reg_n, unroll_kw = cfg["tile_ow"].size[-1], cfg["unroll_kw"].val
+    oh_block_size = cfg["tile_oh"].size[-1]
     _, _, _, _, ic_bn = get_const_tuple(data_vec.shape)
     _, _, _, _, oc_bn = get_const_tuple(conv_out.shape)
 
@@ -180,6 +181,7 @@ def schedule_conv_NCHWc_cpu_common_int8(
 
     batch, oc_chunk, oh, ow, oc_block = s[C].op.axis
     ow_chunk, ow_block = s[C].split(ow, factor=reg_n)
+    oh_chunk, oh_block = s[C].split(oh, factor=oh_block_size)
 
     kh, kw, ic_outer, ic_f_inner, ic_s_inner = s[C].op.reduce_axis
 
@@ -194,12 +196,13 @@ def schedule_conv_NCHWc_cpu_common_int8(
         s[C].reorder(
             batch,
             oc_chunk,
-            oh,
+            oh_chunk,
             ow_chunk,
             ic_outer,
             kh,
             ic_f_inner,
             kw,
+            oh_block,
             ow_block,
             oc_f_inner,
             oc_s_inner,
@@ -210,12 +213,13 @@ def schedule_conv_NCHWc_cpu_common_int8(
         s[C].reorder(
             batch,
             oc_chunk,
-            oh,
+            oh_chunk,
             ow_chunk,
             ic_outer,
             kh,
             kw,
             ic_f_inner,
+            oh_block,
             ow_block,
             oc_f_inner,
             oc_s_inner,
@@ -227,7 +231,7 @@ def schedule_conv_NCHWc_cpu_common_int8(
     s[C].unroll(ow_block)
     s[C].unroll(oc_f_inner)
 
-    parallel_axis = s[C].fuse(batch, oc_chunk, oh)
+    parallel_axis = s[C].fuse(batch, oc_chunk, oh_chunk)
     if C == O:
         s[C].parallel(parallel_axis)
 
