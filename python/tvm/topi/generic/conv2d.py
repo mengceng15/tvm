@@ -213,6 +213,10 @@ def schedule_conv_NCHWc_cpu_common_int8(
     s[C].unroll(ic_f_inner)
     s[C].unroll(oc_f_inner)
 
+    import tvm
+    IN_1, IN_2 = s[C].op.input_tensors
+    print(tvm.lower(s, [IN_1, IN_2, C], simple_mode=True))
+
     parallel_axis = s[C].fuse(batch, oc_chunk, oh_chunk, ow_chunk)
     if C == O:
         s[C].parallel(parallel_axis)
