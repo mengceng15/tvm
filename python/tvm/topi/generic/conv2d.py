@@ -146,8 +146,8 @@ def schedule_conv_NCHWc_cpu_common_int8(
 
     # schedule pad
     if isinstance(s[data_vec].op, te.tensor.ComputeOp) and "pad" in data_vec.op.tag:
-        batch, ic_chunk, ih, iw, ic_block = s[data_vec].op.axis
-        parallel_axis = s[data_vec].fuse(batch, ic_chunk, ih)
+        batch, ih, iw, ic_chunk, ic_block = s[data_vec].op.axis
+        parallel_axis = s[data_vec].fuse(batch, ih, iw)
         s[data_vec].parallel(parallel_axis)
         data_vec = data_vec.op.input_tensors[0]
 
@@ -163,12 +163,12 @@ def schedule_conv_NCHWc_cpu_common_int8(
         # data and kernel are not pre-computed, schedule layout transform here.
         # this should only be used by x86 conv2d_nchw, which is for
         # testing purpose.
-        batch, ic_chunk, ih, iw, ic_block = s[data_vec].op.axis
-        parallel_axis = s[data_vec].fuse(batch, ic_chunk, ih)
+        batch, ih, iw, ic_chunk, ic_block = s[data_vec].op.axis
+        parallel_axis = s[data_vec].fuse(batch, ih, iw)
         s[data_vec].parallel(parallel_axis)
 
         # conv2d_nchwc_int8 has 7D kernel
-        oc_chunk, ic_chunk, oh, ow, ic_block, oc_block, _ = s[kernel_vec].op.axis
+        oc_chunk, oh, ow, ic_chunk, ic_block, oc_block, _ = s[kernel_vec].op.axis
         s[kernel_vec].reorder(oc_chunk, oh, ic_chunk, ow, ic_block, oc_block)
         oc_bn = cfg["tile_oc"].size[-1]
         if oc_bn > 1:
@@ -179,7 +179,7 @@ def schedule_conv_NCHWc_cpu_common_int8(
     # schedule 5-D NCHW[x]c conv
     C, O = conv_out, last
 
-    batch, oc_chunk, oh, ow, oc_block = s[C].op.axis
+    batch, oh, ow, oc_chunk, oc_block = s[C].op.axis
     ow_chunk, ow_block = s[C].split(ow, factor=reg_n)
     oh_chunk, oh_block = s[C].split(oh, factor=oh_block_size)
 
@@ -192,47 +192,28 @@ def schedule_conv_NCHWc_cpu_common_int8(
 
     oc_f_inner, oc_s_inner = s[C].split(oc_block, factor=int32_lanes)
 
-    if unroll_kw:
-        s[C].reorder(
-            batch,
-            oc_chunk,
-            oh_chunk,
-            ow_chunk,
-            ic_outer,
-            kh,
-            ic_f_inner,
-            kw,
-            oh_block,
-            ow_block,
-            oc_f_inner,
-            oc_s_inner,
-            ic_s_inner,
-        )
-        s[C].unroll(kw)
-    else:
-        s[C].reorder(
-            batch,
-            oc_chunk,
-            oh_chunk,
-            ow_chunk,
-            ic_outer,
-            kh,
-            kw,
-            ic_f_inner,
-            oh_block,
-            ow_block,
-            oc_f_inner,
-            oc_s_inner,
-            ic_s_inner,
-        )
+    s[C].reorder(
+        batch,
+        oc_chunk,
+        oh_chunk,
+        ow_chunk,
+        kh,
+        kw,
+        ic_outer,
+        oh_block,
+        ow_block,
+        oc_f_inner,
+        ic_f_inner,
+        oc_s_inner,
+        ic_s_inner,
+    )
 
     if intrin is not None:
         s[C].tensorize(oc_s_inner, intrin)
-    s[C].unroll(oh_block)
-    s[C].unroll(ow_block)
+    s[C].unroll(ic_f_inner)
     s[C].unroll(oc_f_inner)
 
-    parallel_axis = s[C].fuse(batch, oc_chunk, oh_chunk)
+    parallel_axis = s[C].fuse(batch, oc_chunk, oh_chunk, ow_chunk)
     if C == O:
         s[C].parallel(parallel_axis)
 
