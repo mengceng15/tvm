@@ -972,7 +972,7 @@ def unpack_NCHWc_to_nchw(packed_out, out_dtype):
     unpacked_out : tvm.te.Tensor
         The unpacked output tensor in NCHW layout.
     """
-    n, oc_chunk, oh, ow, oc_bn = get_const_tuple(packed_out.shape)
+    n, oh, ow, oc_chunk, oc_bn = get_const_tuple(packed_out.shape)
 
     idxmod = tvm.tir.indexmod
     idxdiv = tvm.tir.indexdiv
@@ -980,7 +980,7 @@ def unpack_NCHWc_to_nchw(packed_out, out_dtype):
     oshape = (n, oc_chunk * oc_bn, oh, ow)
     unpacked_out = te.compute(
         oshape,
-        lambda n, c, h, w: packed_out[n, idxdiv(c, oc_bn), h, w, idxmod(c, oc_bn)].astype(
+        lambda n, c, h, w: packed_out[n, h, w, idxdiv(c, oc_bn), idxmod(c, oc_bn)].astype(
             out_dtype
         ),
         name="output_unpack",
