@@ -199,13 +199,13 @@ def schedule_conv_NCHWc_cpu_common_int8(
         ow_chunk,
         kh,
         kw,
-        ic_outer,
         oh_block,
         ow_block,
+        ic_outer,
         oc_f_inner,
         ic_f_inner,
-        oc_s_inner,
-        ic_s_inner,
+        oc_s_inner, #16 #instruction
+        ic_s_inner, #4
     )
 
     if intrin is not None:
@@ -213,9 +213,9 @@ def schedule_conv_NCHWc_cpu_common_int8(
     s[C].unroll(ic_f_inner)
     s[C].unroll(oc_f_inner)
 
-    import tvm
-    IN_1, IN_2 = s[C].op.input_tensors
-    print(tvm.lower(s, [IN_1, IN_2, C], simple_mode=True))
+    # import tvm
+    # IN_1, IN_2 = s[C].op.input_tensors
+    # print(tvm.lower(s, [IN_1, IN_2, C], simple_mode=True))
 
     parallel_axis = s[C].fuse(batch, oc_chunk, oh_chunk, ow_chunk)
     if C == O:
