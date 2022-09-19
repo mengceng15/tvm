@@ -169,16 +169,17 @@ def _alter_conv2d_layout(attrs, inputs, tinfos, out_type):
         # update new attrs
         n_elems = 4
         new_attrs["channels"] = out_channel
-        new_attrs["data_layout"] = "NCHW%dc" % ic_bn
-        new_attrs["kernel_layout"] = "OIHW{:n}i{:n}o{:n}i".format(ic_bn // n_elems, oc_bn, n_elems)
-        new_attrs["out_layout"] = "NCHW%dc" % oc_bn
+        # new_attrs["data_layout"] = "NCHW%dc" % ic_bn
+        new_attrs["data_layout"] = "NHWC%dc" % ic_bn
+        new_attrs["kernel_layout"] = "OHWI{:n}i{:n}o{:n}i".format(ic_bn // n_elems, oc_bn, n_elems)
+        new_attrs["out_layout"] = "NHWC%dc" % oc_bn
 
         # Store altered operator's config.
         new_data = te.placeholder(
-            (batch_size, in_channel // ic_bn, height, width, ic_bn), dtype=data_dtype
+            (batch_size, height, width, in_channel // ic_bn, ic_bn), dtype=data_dtype
         )
         new_kernel = te.placeholder(
-            (out_channel // oc_bn, in_channel // ic_bn, kh, kw, ic_bn // n_elems, oc_bn, n_elems),
+            (out_channel // oc_bn,  kh, kw, in_channel // ic_bn, ic_bn // n_elems, oc_bn, n_elems),
             dtype=kernel_dtype,
         )
         new_workload = autotvm.task.args_to_workload(

@@ -112,14 +112,14 @@ def _pack_data(cfg, data, kernel):
     oc_chunk = oc // oc_bn
 
     data = te.compute(
-        (n, ic_chunk, ih, iw, ic_bn),
-        lambda bs, c, h, w, vc: data[bs, c * ic_bn + vc, h, w],
+        (n, ih, iw, ic_chunk, ic_bn),
+        lambda bs, h, w, c, vc: data[bs, h, w, c * ic_bn + vc],
         name="data_vec",
     )
 
     kernel = te.compute(
-        (oc_chunk, ic_chunk, kh, kw, ic_bn // n_elems, oc_bn, n_elems),
-        lambda occ, icc, k_h, k_w, icbc, ocb, icbb: kernel[
+        (oc_chunk, kh, kw, ic_chunk, ic_bn // n_elems, oc_bn, n_elems),
+        lambda occ, k_h, k_w, icc, icbc, ocb, icbb: kernel[
             occ * oc_bn + ocb, icc * ic_bn + icbc * n_elems + icbb, k_h, k_w
         ],
         name="kernel_vec",
@@ -132,9 +132,9 @@ def _pack_data(cfg, data, kernel):
 def conv2d_NCHWc_int8(cfg, data, kernel, strides, padding, dilation, layout, out_layout, out_dtype):
     """Compute conv2d with NCHWc layout and int8 dtype"""
     if len(data.shape) == 5:
-        n, ic_chunk, ih, iw, ic_bn = get_const_tuple(data.shape)
+        n, ih, iw, ic_chunk, ic_bn = get_const_tuple(data.shape)
         in_channel = ic_chunk * ic_bn
-        oc_chunk, ic_chunk_group, kernel_height, kernel_width, _, oc_bn, _ = get_const_tuple(
+        oc_chunk, kernel_height, kernel_width, ic_chunk_group, _, oc_bn, _ = get_const_tuple(
             kernel.shape
         )
         num_filter = oc_chunk * oc_bn

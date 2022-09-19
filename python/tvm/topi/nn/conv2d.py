@@ -493,9 +493,9 @@ def conv2d_NCHWc_int8(
         dilation if isinstance(dilation, (tuple, list)) else (dilation, dilation)
     )
 
-    n, ic_chunk, ih, iw, ic_bn = get_const_tuple(data.shape)
+    n, ih, iw, ic_chunk, ic_bn = get_const_tuple(data.shape)
     in_channel = ic_chunk * ic_bn
-    oc_chunk, ic_chunk_group, kernel_height, kernel_width, _, oc_bn, _ = get_const_tuple(
+    oc_chunk, kernel_height, kernel_width, ic_chunk_group, _, oc_bn, _ = get_const_tuple(
         kernel.shape
     )
     groups = ic_chunk // ic_chunk_group
@@ -512,9 +512,9 @@ def conv2d_NCHWc_int8(
     # output shape
     out_height = (ih + HPAD - dilated_kernel_h) // HSTR + 1
     out_width = (iw + WPAD - dilated_kernel_w) // WSTR + 1
-    oshape = (n, oc_chunk, out_height, out_width, oc_bn)
-    pad_before = (0, 0, pad_top, pad_left, 0)
-    pad_after = (0, 0, pad_down, pad_right, 0)
+    oshape = (n, out_height, out_width, oc_chunk, oc_bn)
+    pad_before = (0, pad_top, pad_left, 0, 0)
+    pad_after = (0, pad_down, pad_right, 0, 0)
 
     # DOPAD
     DOPAD = HPAD != 0 or WPAD != 0
@@ -533,15 +533,15 @@ def conv2d_NCHWc_int8(
         ic_s_inner = te.reduce_axis((0, n_elems), name="ic_s_inner")
         return te.compute(
             oshape,
-            lambda n, oc_chunk, oh, ow, oc_block: te.sum(
+            lambda n, oh, ow, oc_chunk, oc_block: te.sum(
                 data_pad[
                     n,
-                    ic_outer,
                     oh * HSTR + kh * dilation_h,
                     ow * WSTR + kw * dilation_w,
+                    ic_outer,
                     ic_f_inner * n_elems + ic_s_inner,
                 ].astype(out_dtype)
-                * kernel[oc_chunk, ic_outer, kh, kw, ic_f_inner, oc_block, ic_s_inner].astype(
+                * kernel[oc_chunk, kh, kw, ic_outer, ic_f_inner, oc_block, ic_s_inner].astype(
                     out_dtype
                 ),
                 axis=[kh, kw, ic_outer, ic_f_inner, ic_s_inner],
@@ -555,18 +555,18 @@ def conv2d_NCHWc_int8(
     ic_outer = te.reduce_axis((0, ic_chunk // groups), name="ic_outer")
     ic_f_inner = te.reduce_axis((0, ic_bn // n_elems), name="ic_f_inner")
     ic_s_inner = te.reduce_axis((0, n_elems), name="ic_s_inner")
-    oshape = (n, oc_chunk, out_height, out_width, oc_bn)
+    oshape = (n, out_height, out_width, oc_chunk, oc_bn)
     return te.compute(
         oshape,
-        lambda n, occ, oh, ow, oc_block: te.sum(
+        lambda n, oh, ow, occ, oc_block: te.sum(
             data_pad[
                 n,
-                (occ * oc_bn // (oc_chunk * oc_bn // groups)) * (ic_chunk // groups) + ic_outer,
                 oh * HSTR + kh,
                 ow * WSTR + kw,
+                (occ * oc_bn // (oc_chunk * oc_bn // groups)) * (ic_chunk // groups) + ic_outer,
                 ic_f_inner * n_elems + ic_s_inner,
             ].astype(out_dtype)
-            * kernel[occ, ic_outer, kh, kw, ic_f_inner, oc_block, ic_s_inner].astype(out_dtype),
+            * kernel[occ, kh, kw, ic_outer, ic_f_inner, oc_block, ic_s_inner].astype(out_dtype),
             axis=[kh, kw, ic_outer, ic_f_inner, ic_s_inner],
         ),
         name="conv2d_NCHWc_int8",
