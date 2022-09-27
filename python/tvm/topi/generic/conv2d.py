@@ -194,30 +194,33 @@ def schedule_conv_NCHWc_cpu_common_int8(
 
     s[C].reorder(
         batch,
-        oc_chunk,
         oh_chunk,
         ow_chunk,
+        oc_chunk, #parallel
+        oh_block,
+        ic_outer,
+
+        ic_f_inner,
         kh,
         kw,
-        oh_block,
+
         ow_block,
-        ic_outer,
         oc_f_inner,
-        ic_f_inner,
         oc_s_inner, #16 #instruction
         ic_s_inner, #4
     )
 
     if intrin is not None:
         s[C].tensorize(oc_s_inner, intrin)
-    s[C].unroll(ic_f_inner)
-    s[C].unroll(oc_f_inner)
+    # s[C].unroll()
+    # s[C].unroll(ic_f_inner)
+    # s[C].unroll(oc_f_inner)
 
     # import tvm
     # IN_1, IN_2 = s[C].op.input_tensors
     # print(tvm.lower(s, [IN_1, IN_2, C], simple_mode=True))
 
-    parallel_axis = s[C].fuse(batch, oc_chunk, oh_chunk, ow_chunk)
+    parallel_axis = s[C].fuse(batch, oh_chunk, ow_chunk, oc_chunk)
     if C == O:
         s[C].parallel(parallel_axis)
 
