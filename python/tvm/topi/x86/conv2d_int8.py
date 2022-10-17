@@ -122,7 +122,7 @@ def _pack_data(cfg, data, kernel):
     kernel = te.compute(
         (oc_chunk, kh, kw, ic_chunk, ic_bn // n_elems, oc_bn, n_elems),
         lambda occ, k_h, k_w, icc, icbc, ocb, icbb: kernel[
-            occ * oc_bn + ocb, icc * ic_bn * n_elems + icbc * n_elems + icbb, k_h, k_w
+            occ * oc_bn + ocb, icc * ic_bn + icbc * n_elems + icbb, k_h, k_w
         ],
         name="kernel_vec",
     )
