@@ -70,7 +70,7 @@ def fallback_schedule_cpu_common_int8(cfg, wkl, int32_lanes, num_int8_elements):
     cfg["tile_ic"] = SplitEntity([wkl.in_filter // ic_bn, ic_bn])
     cfg["tile_oc"] = SplitEntity([wkl.out_filter // oc_bn, oc_bn])
     cfg["tile_ow"] = SplitEntity([out_width // reg_n, reg_n])
-    cfg["unroll_kw"] = OtherOptionEntity(False)
+    # cfg["unroll_kw"] = OtherOptionEntity(False)
 
 
 def fallback_schedule_cpu_1x1_int8(cfg, wkl, int32_lanes, num_int8_elements):
