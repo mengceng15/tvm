@@ -227,7 +227,7 @@ def schedule_conv_NCHWc_cpu_common_int8(
     if C != O:
         out_ndim = len(s[O].op.axis)
         if out_ndim == 5:
-            batch, oc_chunk, oh, ow, oc_block = s[O].op.axis
+            batch, oh, ow, oc_chunk, oc_block = s[O].op.axis
             ow_chunk, ow_block = s[O].split(ow, factor=reg_n)
             s[O].reorder(oc_chunk, oh, ow_chunk, ow_block, oc_block)
         elif out_ndim == 4:
