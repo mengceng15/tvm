@@ -266,7 +266,8 @@ def schedule_conv_NCHWc_cpu_1x1_int8(
     More details - https://software.intel.com/en-us/articles/
     lower-numerical-precision-deep-learning-inference-and-training
     """
-    oh_factor, ow_factor = cfg["tile_oh"].val, cfg["tile_ow"].size[-1]
+    # oh_factor, ow_factor = cfg["tile_oh"].val, cfg["tile_ow"].size[-1]
+    oh_factor, ow_factor = cfg["tile_oh"].size[-1], cfg["tile_ow"].size[-1]
     _, _, _, _, ic_bn = get_const_tuple(data_vec.shape)
     _, _, _, _, oc_bn = get_const_tuple(conv_out.shape)
 
