@@ -201,7 +201,7 @@ def schedule_conv2d_NCHWc_int8(cfg, outs):
 
             args = [s, cfg, data_vec, kernel_vec, conv_out, outs[0]]
             # int8 conv kernel is 7-dim
-            _, _, kh, kw, _, _, _ = get_const_tuple(kernel_vec.shape)
+            _, kh, kw, _, _, _, _ = get_const_tuple(kernel_vec.shape)
             if kh == 1 and kw == 1:
                 conv2d_avx_1x1._schedule_conv_NCHWc_int8(*args)
             else:
