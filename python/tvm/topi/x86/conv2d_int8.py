@@ -31,6 +31,109 @@ from ..utils import get_const_tuple, traverse_inline
 from .. import nn
 from . import conv2d_avx_1x1, conv2d_avx_common
 from .utils import target_has_sse42
+from tvm.autotvm.task.space import SplitEntity, OtherOptionEntity
+
+
+def fallback_schedule_x86_int8(cfg, wkl, int32_lanes, num_int8_elements):
+    """Fallback schedule for conv2d int8 on x86 cpu.
+    Normally the inner most pattern takes two int8/uint8 tensors
+    data[num_int8_elements] and kernel[int32_lanes, num_int8_elements],
+    produces a dot product int32/uint32 output[int32_lanes].
+
+    Parameters
+    ----------
+    int32_lanes : int
+        How many numbers of int32/uint32 will be produced using intrinsic.
+        This is related to output channel.
+    num_int8_elements : int
+        How many numbers of input int32/uint32 will be multiplied and reduced.
+        This is related to input channel.
+    """
+    pt, pl, pb, pr = wkl.padt, wkl.padl, wkl.padb, wkl.padr
+    HSTR, WSTR = wkl.stride_h, wkl.stride_w
+    dilated_kernel_w = (wkl.kernel_w - 1) * wkl.dilation_w + 1
+    out_width = (wkl.width + pl + pr - dilated_kernel_w) // WSTR + 1
+
+    assert wkl.out_filter % int32_lanes == 0, "wkl.out_filter=%d, int32_lanes=%d" % (
+        wkl.out_filter,
+        int32_lanes,
+    )
+    assert wkl.in_filter % num_int8_elements == 0, "wkl.in_filter=%d, num_int8_elements=%d" % (
+        wkl.in_filter,
+        num_int8_elements,
+    )
+
+    oc_bn = int32_lanes if int32_lanes >= num_int8_elements else num_int8_elements
+    ic_bn = 1
+    for bn in range(oc_bn, 0, -4):
+        if wkl.in_filter % bn == 0:
+            ic_bn = bn
+            break
+
+    reg_n = 1
+    for n in range(31, 0, -1):
+        if out_width % n == 0:
+            reg_n = n
+            break
+
+    oh_bn = 1
+    for n in range(31, 0, -1):
+        if oh_bn % n == 0:
+            oh_bn = n
+            break
+
+    cfg["tile_ic"] = SplitEntity([wkl.in_filter // ic_bn, ic_bn])
+    cfg["tile_oc"] = SplitEntity([wkl.out_filter // oc_bn, oc_bn])
+    cfg["tile_ow"] = SplitEntity([out_width // reg_n, reg_n])
+    cfg["tile_oh"] = SplitEntity([-1, 1])
+
+
+def fallback_schedule_x86_1x1_int8(cfg, wkl, int32_lanes, num_int8_elements):
+    """Fallback schedule for 1x1 conv2d int8 on x86 cpu.
+    Normally the inner most pattern takes two int8/uint8 tensors
+    data[num_int8_elements] and kernel[int32_lanes, num_int8_elements],
+    produces a dot product int32/uint32 output[int32_lanes].
+
+    Parameters
+    ----------
+    int32_lanes : int
+        How many numbers of int32/uint32 will be produced using intrinsic.
+        This is related to output channel.
+    num_int8_elements : int
+        How many numbers of input int32/uint32 will be multiplied and reduced.
+        This is related to input channel.
+    """
+    pt, pl, pb, pr = wkl.padt, wkl.padl, wkl.padb, wkl.padr
+    HSTR, WSTR = wkl.stride_h, wkl.stride_w
+    out_height = (wkl.height + pt + pb - wkl.kernel_h) // HSTR + 1
+    out_width = (wkl.width + pl + pr - wkl.kernel_w) // WSTR + 1
+
+    assert wkl.out_filter % int32_lanes == 0, "wkl.out_filter=%d, int32_lanes=%d" % (
+        wkl.out_filter,
+        int32_lanes,
+    )
+    assert wkl.in_filter % num_int8_elements == 0, "wkl.in_filter=%d, num_int8_elements=%d" % (
+        wkl.in_filter,
+        num_int8_elements,
+    )
+
+    oc_bn = int32_lanes if int32_lanes >= num_int8_elements else num_int8_elements
+    ic_bn = 1
+    for bn in range(oc_bn, 0, -4):
+        if wkl.in_filter % bn == 0:
+            ic_bn = bn
+            break
+
+    for ow_factor in range(out_width, 0, -1):
+        if out_width % ow_factor == 0:
+            for oh_factor in range(out_height, 0, -1):
+                if out_height % oh_factor == 0 and ow_factor * oh_factor < 32:
+                    cfg["tile_ic"] = SplitEntity([wkl.in_filter // ic_bn, ic_bn])
+                    cfg["tile_oc"] = SplitEntity([wkl.out_filter // oc_bn, oc_bn])
+                    cfg["tile_oh"] = SplitEntity([out_height // oh_factor, oh_factor])
+                    cfg["tile_ow"] = SplitEntity([out_width // ow_factor, ow_factor])
+                    return
+    raise ValueError("cannot decide default schedule for workload: {}".format(wkl))
 
 
 def _get_default_config_int8(
@@ -58,11 +161,11 @@ def _get_default_config_int8(
         wkl = _get_conv2d_workload(data, kernel, strides, padding, dilation, out_dtype, layout)
         is_kernel_1x1 = wkl.kernel_h == 1 and wkl.kernel_w == 1
         if is_kernel_1x1:
-            conv2d_generic.fallback_schedule_cpu_1x1_int8(
+            fallback_schedule_x86_1x1_int8(
                 cfg, wkl, int32_lanes=int32_lanes, num_int8_elements=4
             )
         else:
-            conv2d_generic.fallback_schedule_cpu_common_int8(
+            fallback_schedule_x86_int8(
                 cfg, wkl, int32_lanes=int32_lanes, num_int8_elements=4
             )
 
