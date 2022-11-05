@@ -301,10 +301,6 @@ def dense_vnni_compute(cfg, X, packed_w, bias=None):
 
     if bias is not None:
         C = te.compute(C.shape, lambda i, j: C[i, j] + bias[j], tag=tag.BROADCAST)
-
-    a_y, _ = C.op.axis
-    cfg.define_split("tile_y", a_y, num_outputs=2)
-
     return C
 
 
@@ -312,37 +308,90 @@ def dense_vnni_schedule(cfg, s, C, O, do_parallel=True):
     """Schedule dense compute using VNNI vpdpbusd instruction"""
     # C: The output of GEMM
     # O: The output of the fused op
+    A, B = C.op.input_tensors
+
     def split_y(out):
-        default_y_split_factor = 32
-        a_y = out.op.axis[-2]
+        default_y_split_factor1 = 2
+        default_y_split_factor2 = 2
+        default_y_split_factor3 = 2
+        a_y = s[out].op.axis[-2]
 
         if cfg.is_fallback:
-            return s[out].split(a_y, factor=default_y_split_factor)
+            a_yo1, a_yo = s[out].split(a_y, factor=default_y_split_factor1)
+            a_yo2, a_yo1 = s[out].split(a_yo1, factor=default_y_split_factor2)
+            a_yo3, a_yo2 = s[out].split(a_yo2, factor=default_y_split_factor3)
+            return [a_yo3, a_yo2, a_yo1, a_yo]
 
+        cfg.define_split("tile_y", a_y, num_outputs=4)
         return cfg["tile_y"].apply(s, out, a_y)
 
+    def split_x(out):
+        default_x_split_factor1 = 16
+        default_x_split_factor2 = 2
+        default_x_split_factor3 = 2
+        default_x_split_factor4 = 2
+        a_x = s[out].op.axis[-1]
+
+        if cfg.is_fallback:
+            a_xo, a_xi = s[out].split(a_x, factor=default_x_split_factor1)
+            a_xo2, a_xo1 = s[out].split(a_xo, factor=default_x_split_factor2)
+            a_xo3, a_xo2 = s[out].split(a_xo2, factor=default_x_split_factor3)
+            a_xo4, a_xo3 = s[out].split(a_xo3, factor=default_x_split_factor4)
+            return [a_xo4, a_xo3, a_xo2, a_xo1, a_xi]
+
+        cfg.define_split("tile_x", a_x, num_outputs=5,
+            filter=lambda x: x.size[-1] == 16)
+        return cfg["tile_x"].apply(s, out, a_x)
+
+    def split_k(out, rd_axis):
+        default_k_split_factor1 = 4
+        default_k_split_factor2 = 2
+        default_k_split_factor3 = 2
+        default_k_split_factor4 = 2
+
+        if cfg.is_fallback:
+            a_ko, a_ki = s[out].split(rd_axis, factor=default_k_split_factor1)
+            a_ko2, a_ko1 = s[out].split(a_ko, factor=default_k_split_factor2)
+            a_ko3, a_ko2 = s[out].split(a_ko2, factor=default_k_split_factor3)
+            a_ko4, a_ko3 = s[out].split(a_ko3, factor=default_k_split_factor4)
+            return [a_ko4, a_ko3, a_ko2, a_ko1, a_ki]
+
+        cfg.define_split("tile_k", rd_axis, num_outputs=5,
+            filter=lambda x: x.size[-1] == 4)
+        return cfg["tile_k"].apply(s, out, rd_axis)
+
     (a_k,) = C.op.reduce_axis
+    a_y3, a_y2, a_y1, a_yr = split_y(C)
+    a_x3, a_x2, a_x1, a_xr, a_xi = split_x(C)
+    a_k3, a_k2, a_k1, a_kr, a_ki = split_k(C, a_k)
 
-    a_yo, a_yi = split_y(C)
-    a_xo, a_xi = s[C].split(C.op.axis[-1], factor=16)
-    a_ko, a_ki = s[C].split(a_k, factor=4)
-
-    s[C].reorder(a_yo, a_xo, a_yi, a_ko, a_xi, a_ki)
+    s[C].reorder(a_y3, a_x3, a_k3,
+        a_y2, a_x2, a_k2,
+        a_y1, a_x1, a_k1,
+        a_yr, a_xr, a_kr,
+        a_xi, a_ki)
 
     pc = dot_16x1x16_uint8_int8_int32_cascadelake()
     s[C].tensorize(a_xi, pc)
+    s[C].unroll(a_yr)
+    s[C].unroll(a_xr)
+    s[C].unroll(a_kr)
 
     if C == O:
-        fused = s[O].fuse(a_yo, a_xo)
+        fused = s[O].fuse(a_y3, a_x3)
     else:
-        a_yo, a_yi = split_y(O)
-        a_xo, a_xi = s[O].split(O.op.axis[-1], factor=16)
+        a_y3, a_y2, a_y1, a_yr = split_y(O)
+        a_x3, a_x2, a_x1, a_xr, a_xi = split_x(O)
 
-        s[O].reorder(a_yo, a_xo, a_yi, a_xi)
+        s[O].reorder(a_y3, a_x3,
+            a_y2, a_x2,
+            a_y1, a_x1,
+            a_yr, a_xr,
+            a_xi)
         s[O].vectorize(a_xi)
-        s[C].compute_at(s[O], a_yi)
+        s[C].compute_at(s[O], a_y2)
 
-        fused = s[O].fuse(a_yo, a_xo)
+        fused = s[O].fuse(a_y3, a_x3)
 
     if do_parallel:
         s[O].parallel(fused)
