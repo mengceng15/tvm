@@ -43,7 +43,9 @@ def fallback_schedule_cpu_common_int8(cfg, wkl, int32_lanes, num_int8_elements):
     pt, pl, pb, pr = wkl.padt, wkl.padl, wkl.padb, wkl.padr
     HSTR, WSTR = wkl.stride_h, wkl.stride_w
     dilated_kernel_w = (wkl.kernel_w - 1) * wkl.dilation_w + 1
+    dilated_kernel_h = (wkl.kernel_h - 1) * wkl.dilation_h + 1
     out_width = (wkl.width + pl + pr - dilated_kernel_w) // WSTR + 1
+    out_height = (wkl.height + pt + pb - dilated_kernel_h) // HSTR + 1
 
     assert wkl.out_filter % int32_lanes == 0, "wkl.out_filter=%d, int32_lanes=%d" % (
         wkl.out_filter,
@@ -67,10 +69,16 @@ def fallback_schedule_cpu_common_int8(cfg, wkl, int32_lanes, num_int8_elements):
             reg_n = n
             break
 
+    oh_bn = 1
+    for n in range(31, 0, -1):
+        if out_height % n == 0:
+            oh_bn = n
+            break
+
     cfg["tile_ic"] = SplitEntity([wkl.in_filter // ic_bn, ic_bn])
     cfg["tile_oc"] = SplitEntity([wkl.out_filter // oc_bn, oc_bn])
     cfg["tile_ow"] = SplitEntity([out_width // reg_n, reg_n])
-    cfg["unroll_kw"] = OtherOptionEntity(False)
+    cfg["tile_oh"] = SplitEntity([out_height // oh_bn, oh_bn])
 
 
 def fallback_schedule_cpu_1x1_int8(cfg, wkl, int32_lanes, num_int8_elements):
@@ -113,9 +121,10 @@ def fallback_schedule_cpu_1x1_int8(cfg, wkl, int32_lanes, num_int8_elements):
         if out_width % ow_factor == 0:
             for oh_factor in range(out_height, 0, -1):
                 if out_height % oh_factor == 0 and ow_factor * oh_factor < 32:
+                    cfg["reorder_chw"] = OtherOptionEntity(False)
                     cfg["tile_ic"] = SplitEntity([wkl.in_filter // ic_bn, ic_bn])
                     cfg["tile_oc"] = SplitEntity([wkl.out_filter // oc_bn, oc_bn])
-                    cfg["tile_oh"] = OtherOptionEntity(oh_factor)
+                    cfg["tile_oh"] = SplitEntity([out_height // oh_factor, oh_factor])
                     cfg["tile_ow"] = SplitEntity([out_width // ow_factor, ow_factor])
                     return
     raise ValueError("cannot decide default schedule for workload: {}".format(wkl))
@@ -191,15 +200,15 @@ def schedule_conv_NCHWc_cpu_common_int8(
     ), f"ic_bn={ic_bn} % int8_elems={int8_elems} != 0"  # (u)int8 elements in (u)int32
 
     oc_f_inner, oc_s_inner = s[C].split(oc_block, factor=int32_lanes)
-
+    
     s[C].reorder(
         batch,
+        oc_chunk,
         oh_chunk,
         ow_chunk,
-        oc_chunk, #parallel
+
         oh_block,
         ic_outer,
-
         ic_f_inner,
         kh,
         kw,
@@ -212,15 +221,8 @@ def schedule_conv_NCHWc_cpu_common_int8(
 
     if intrin is not None:
         s[C].tensorize(oc_s_inner, intrin)
-    # s[C].unroll()
-    # s[C].unroll(ic_f_inner)
-    # s[C].unroll(oc_f_inner)
 
-    # import tvm
-    # IN_1, IN_2 = s[C].op.input_tensors
-    # print(tvm.lower(s, [IN_1, IN_2, C], simple_mode=True))
-
-    parallel_axis = s[C].fuse(batch, oh_chunk, ow_chunk, oc_chunk)
+    parallel_axis = s[C].fuse(batch, oc_chunk, oh_chunk, ow_chunk)
     if C == O:
         s[C].parallel(parallel_axis)
 
@@ -315,28 +317,47 @@ def schedule_conv_NCHWc_cpu_1x1_int8(
     oc_f_inner, oc_s_inner = s[C].split(oc_block, factor=int32_lanes)
     oh_outer, oh_inner = s[C].split(oh, factor=oh_factor)
     ow_outer, ow_inner = s[C].split(ow, factor=ow_factor)
-    
-    s[C].reorder(
-        batch,
-        oh_outer,
-        ow_outer,
-        oc_chunk,
-        oh_inner,
-        ow_inner,
-        ic_outer,
-        # (osb, ic1)
-        ic_f_inner,
-        oc_f_inner,
 
-        oc_s_inner,
-        ic_s_inner #instr
-    )
-    s[C].fuse(oh_inner, ow_inner)
+    if cfg["reorder_chw"].val:
+        s[C].reorder(
+            batch,
+            oc_chunk,
+            oh_outer,
+            ow_outer,
 
+            oc_f_inner,
+            ic_outer,
+
+            oh_inner,
+            ow_inner,
+            ic_f_inner,
+
+            oc_s_inner,
+            ic_s_inner
+        )
+        parallel_axis = s[C].fuse(batch, oc_chunk, oh_outer, ow_outer)
+    else:
+        s[C].reorder(
+            batch,
+            oh_outer,
+            ow_outer,
+            oc_chunk,
+
+            oh_inner,
+            ow_inner,
+            ic_outer,
+
+            oc_f_inner,
+            ic_f_inner,
+
+            oc_s_inner,
+            ic_s_inner
+        )
+        parallel_axis = s[C].fuse(batch, oh_outer, ow_outer, oc_chunk)
+        
     if intrin is not None:
         s[C].tensorize(oc_s_inner, intrin)
 
-    parallel_axis = s[C].fuse(batch, oh_outer, ow_outer, oc_chunk)
     if C == O:
         s[C].parallel(parallel_axis)
     else :
