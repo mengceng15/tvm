@@ -268,7 +268,6 @@ def schedule_conv_NCHWc_cpu_1x1_int8(
     More details - https://software.intel.com/en-us/articles/
     lower-numerical-precision-deep-learning-inference-and-training
     """
-    # oh_factor, ow_factor = cfg["tile_oh"].val, cfg["tile_ow"].size[-1]
     oh_factor, ow_factor = cfg["tile_oh"].size[-1], cfg["tile_ow"].size[-1]
     _, _, _, _, ic_bn = get_const_tuple(data_vec.shape)
     _, _, _, _, oc_bn = get_const_tuple(conv_out.shape)
@@ -318,43 +317,25 @@ def schedule_conv_NCHWc_cpu_1x1_int8(
     oh_outer, oh_inner = s[C].split(oh, factor=oh_factor)
     ow_outer, ow_inner = s[C].split(ow, factor=ow_factor)
 
-    if cfg["reorder_chw"].val:
-        s[C].reorder(
-            batch,
-            oc_chunk,
-            oh_outer,
-            ow_outer,
+    s[C].reorder(
+        batch,
+        oh_outer,
+        ow_outer,
+        oc_chunk,
+    
+        ic_outer,
 
-            oc_f_inner,
-            ic_outer,
+        oh_inner,
+        ow_inner,
 
-            oh_inner,
-            ow_inner,
-            ic_f_inner,
+        ic_f_inner,
+        oc_f_inner,
 
-            oc_s_inner,
-            ic_s_inner
-        )
-        parallel_axis = s[C].fuse(batch, oc_chunk, oh_outer, ow_outer)
-    else:
-        s[C].reorder(
-            batch,
-            oh_outer,
-            ow_outer,
-            oc_chunk,
-
-            oh_inner,
-            ow_inner,
-            ic_outer,
-
-            oc_f_inner,
-            ic_f_inner,
-
-            oc_s_inner,
-            ic_s_inner
-        )
-        parallel_axis = s[C].fuse(batch, oh_outer, ow_outer, oc_chunk)
-        
+        oc_s_inner,
+        ic_s_inner
+    )
+    parallel_axis = s[C].fuse(batch, oh_outer, ow_outer, oc_chunk)
+ 
     if intrin is not None:
         s[C].tensorize(oc_s_inner, intrin)
 
