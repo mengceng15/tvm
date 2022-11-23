@@ -261,7 +261,6 @@ def conv2d_NCHWc_int8(cfg, data, kernel, strides, padding, dilation, layout, out
     cfg.define_split("tile_oc", num_filter, num_outputs=2, filter=lambda y: y.size[-1] % 16 == 0)
     cfg.define_split("tile_ow", ow, num_outputs=2, filter=lambda y: y.size[-1] <= 64)
     if is_kernel_1x1:
-        cfg.define_knob("reorder_chw", [True, False])
         cfg.define_split("tile_oh", oh, num_outputs=2)
     else:
         cfg.define_split("tile_oh", oh, num_outputs=2)

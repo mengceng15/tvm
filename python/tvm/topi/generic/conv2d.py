@@ -121,7 +121,6 @@ def fallback_schedule_cpu_1x1_int8(cfg, wkl, int32_lanes, num_int8_elements):
         if out_width % ow_factor == 0:
             for oh_factor in range(out_height, 0, -1):
                 if out_height % oh_factor == 0 and ow_factor * oh_factor < 32:
-                    cfg["reorder_chw"] = OtherOptionEntity(False)
                     cfg["tile_ic"] = SplitEntity([wkl.in_filter // ic_bn, ic_bn])
                     cfg["tile_oc"] = SplitEntity([wkl.out_filter // oc_bn, oc_bn])
                     cfg["tile_oh"] = SplitEntity([out_height // oh_factor, oh_factor])
@@ -306,7 +305,7 @@ def schedule_conv_NCHWc_cpu_1x1_int8(
 
     C, O = conv_out, last
 
-    batch, oc_chunk, oh, ow, oc_block = s[C].op.axis
+    batch, oh, ow, oc_chunk, oc_block = s[C].op.axis
 
     kh, kw, ic_outer, ic_f_inner, ic_s_inner = s[C].op.reduce_axis
 
