@@ -290,7 +290,8 @@ def dense_vnni_compute(cfg, X, packed_w, bias=None):
         (m, n_o * n_i),
         lambda i, j: te.sum(
             X[i, ak].astype("int32")
-            * packed_w[tvm.tir.indexdiv(j, 16), tvm.tir.indexdiv(ak, 4), j % 16, ak % 4].astype(
+                * packed_w[tvm.tir.indexdiv(j, packed_w.shape[-2]),
+                tvm.tir.indexdiv(ak, 4), j % packed_w.shape[-2], ak % 4].astype(
                 "int32"
             ),
             axis=ak,
@@ -302,9 +303,6 @@ def dense_vnni_compute(cfg, X, packed_w, bias=None):
     if bias is not None:
         C = te.compute(C.shape, lambda i, j: C[i, j] + bias[j], tag=tag.BROADCAST)
 
-    a_y, _ = C.op.axis
-    cfg.define_split("tile_y", a_y, num_outputs=2)
-
     return C
 
 
@@ -312,40 +310,91 @@ def dense_vnni_schedule(cfg, s, C, O, do_parallel=True):
     """Schedule dense compute using VNNI vpdpbusd instruction"""
     # C: The output of GEMM
     # O: The output of the fused op
+    A, B = C.op.input_tensors
+    B_inner_block2 = B.shape[-2].value
+
     def split_y(out):
-        default_y_split_factor = 32
-        a_y = out.op.axis[-2]
+        default_y_split_factor1 = 2
+        default_y_split_factor2 = 2
+        default_y_split_factor3 = 2
+        a_y = s[out].op.axis[-2]
 
         if cfg.is_fallback:
-            return s[out].split(a_y, factor=default_y_split_factor)
+            a_yo, a_yi = s[out].split(a_y, factor=default_y_split_factor1)
+            a_yo2, a_yo1 = s[out].split(a_yo, factor=default_y_split_factor2)
+            a_yo3, a_yo2 = s[out].split(a_yo2, factor=default_y_split_factor3)
+            return [a_yo3, a_yo2, a_yo1, a_yi]
 
+        cfg.define_split("tile_y", a_y, num_outputs=4)
         return cfg["tile_y"].apply(s, out, a_y)
 
-    (a_k,) = C.op.reduce_axis
+    def split_x(out):
+        default_x_split_factor1 = B_inner_block2
+        default_x_split_factor2 = 2
+        default_x_split_factor3 = 2
+        default_x_split_factor4 = 1
+        a_x = s[out].op.axis[-1]
 
-    a_yo, a_yi = split_y(C)
-    a_xo, a_xi = s[C].split(C.op.axis[-1], factor=16)
-    a_ko, a_ki = s[C].split(a_k, factor=4)
+        if cfg.is_fallback:
+            a_xo, a_xi = s[out].split(a_x, factor=default_x_split_factor1)
+            a_xo2, a_xo1 = s[out].split(a_xo, factor=default_x_split_factor2)
+            a_xo3, a_xo2 = s[out].split(a_xo2, factor=default_x_split_factor3)
+            a_xo4, a_xo3 = s[out].split(a_xo3, factor=default_x_split_factor4)
+            return [a_xo4, a_xo3, a_xo2, a_xo1, a_xi]
 
-    s[C].reorder(a_yo, a_xo, a_yi, a_ko, a_xi, a_ki)
+        cfg.define_split("tile_x", a_x, num_outputs=5,
+            filter=lambda x: x.size[-1] == B_inner_block2)
+        return cfg["tile_x"].apply(s, out, a_x)
 
-    pc = dot_16x1x16_uint8_int8_int32_cascadelake()
-    s[C].tensorize(a_xi, pc)
+    def split_k(out, rd_axis):
+        default_k_split_factor1 = 4
+        default_k_split_factor2 = B_inner_block2
+        default_k_split_factor3 = 2
+
+        if cfg.is_fallback:
+            a_ko, a_ki = s[out].split(rd_axis, factor=default_k_split_factor1)
+            a_ko2, a_ko1 = s[out].split(a_ko, factor=default_k_split_factor2)
+            a_ko3, a_ko2 = s[out].split(a_ko2, factor=default_k_split_factor3)
+            return [a_ko3, a_ko2, a_ko1, a_ki]
+
+        cfg.define_split("tile_k", rd_axis, num_outputs=4,
+            filter=lambda x: x.size[-1] == 4)
+        return cfg["tile_k"].apply(s, out, rd_axis)
+
+    (c_k,) = C.op.reduce_axis
+    yo2, yo1, yi2, yi1 = split_y(C)
+    xo2, xo1, xi2, xi1, xi0 = split_x(C)
+    ko1, ki2, ki1, ki0 = split_k(C, c_k)
+
+    s[C].reorder(
+        yo2, xo2,
+        yo1, xo1, ko1, # l2 cache
+        yi2, xi2, ki2, # l1 cache
+        ki1, yi1, xi1, # register
+        xi0, ki0)      # instruction
+
+    pc = dot_16x1x16_uint8_int8_int32_cascadelake(B_inner_block2)
+    s[C].tensorize(xi0, pc)
+    s[C].unroll(yi1)
+    s[C].unroll(xi1)
+    s[C].unroll(ki1)
 
     if C == O:
-        fused = s[O].fuse(a_yo, a_xo)
+        fused = s[O].fuse(yo2, xo2)
     else:
-        a_yo, a_yi = split_y(O)
-        a_xo, a_xi = s[O].split(O.op.axis[-1], factor=16)
+        a_yo2, a_yo1, a_yi = split_y(O)
+        a_xo2, a_xo1, a_xi = split_x(O)
 
-        s[O].reorder(a_yo, a_xo, a_yi, a_xi)
+        s[O].reorder(a_yo2, a_xo2, a_yo1, a_xo1, a_yi, a_xi)
         s[O].vectorize(a_xi)
-        s[C].compute_at(s[O], a_yi)
+        s[C].compute_at(s[O], a_yo1)
 
-        fused = s[O].fuse(a_yo, a_xo)
+        fused = s[O].fuse(a_yo2, a_xo2)
 
     if do_parallel:
         s[O].parallel(fused)
+
+    # print(tvm.lower(s, [A, B, O], simple_mode=True))
 
     return s, fused
 
@@ -358,7 +407,7 @@ def dense_vnni(cfg, data, weight, bias=None, out_dtype=None):
     assert len(weight.shape) == 4
     assert data.dtype == "uint8" and weight.dtype == "int8"
     _, _, n_inner, k_inner = get_const_tuple(weight.shape)  # out_dim
-    assert n_inner == 16 and k_inner == 4
+    assert (n_inner == 64 or n_inner == 32 or n_inner == 16) and k_inner == 4
     return dense_vnni_compute(cfg, data, weight, bias)
 
 
